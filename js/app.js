@@ -102,7 +102,6 @@ function renderLive(prices) {
       onQtyChange: (val) => {
         qty = val;
         setStored(qtyKey, qty);
-        update(prices);
       },
     });
 
@@ -140,12 +139,10 @@ function renderManual() {
       onQtyChange: (val) => {
         qty = val;
         setStored(qtyKey, qty);
-        refreshAll();
       },
       onPriceChange: (val) => {
         price = val;
         setStored(priceKey, price);
-        refreshAll();
       },
     });
 
@@ -211,6 +208,8 @@ async function init() {
   repoLink.href = window.location.href.includes("github.io")
     ? `https://github.com/${window.location.hostname.split(".")[0]}/${window.location.pathname.split("/")[1]}`
     : "#";
+
+  document.getElementById("calc-btn").addEventListener("click", refreshAll);
 
   try {
     const res = await fetch("data/prices.json", { cache: "no-store" });
