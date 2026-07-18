@@ -1,13 +1,13 @@
 {
-  "updated_at": null,
+  "updated_at": "2026-07-18T14:53:40.577267+03:30",
   "coins": {
-    "emami": null,
-    "nim": null,
-    "robe": null
+    "emami": 188980.0,
+    "nim": 95910.0,
+    "robe": 54760.0
   },
   "funds": {},
   "status": {
-    "coins": "not_run_yet",
-    "funds": "not_run_yet"
+    "coins": "ok",
+    "funds": "skipped: no BRSAPI_KEY"
   }
 }
