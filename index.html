@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>دفتر دارایی | طلا و سکه</title>
+<link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+  <div class="wrap">
+    <header class="masthead">
+      <p class="eyebrow">دفتر شخصی دارایی</p>
+      <h1>طلا، سکه و صندوق</h1>
+      <p class="sub">قیمت‌های لحظه‌ای هر چند ساعت به‌صورت خودکار به‌روزرسانی می‌شوند</p>
+    </header>
+
+    <main class="ledger">
+      <section class="seal-section">
+        <div class="seal">
+          <span class="seal-label">دفتر دارایی</span>
+        </div>
+        <div class="total-label">ارزش کل دارایی</div>
+        <div class="total-amount" id="grand-total">۰ <small>هزار تومان</small></div>
+        <div class="freshness">
+          <span class="dot" id="freshness-dot"></span>
+          <span id="freshness-text">در حال بارگذاری…</span>
+        </div>
+      </section>
+
+      <section class="book-section">
+        <h2>بازار لحظه‌ای</h2>
+        <p class="desc">قیمت‌ها از منبع آنلاین خوانده می‌شوند؛ فقط تعداد را وارد کنید.</p>
+        <div class="row head">
+          <span>قلم</span>
+          <span>تعداد</span>
+          <span>قیمت واحد</span>
+          <span>جمع</span>
+        </div>
+        <div id="live-rows"></div>
+        <div class="section-total">
+          <span>جمع بازار لحظه‌ای</span>
+          <b id="live-total">۰</b>
+        </div>
+      </section>
+
+      <section class="book-section">
+        <h2>قیمت دستی</h2>
+        <p class="desc">این اقلام از API پشتیبانی نمی‌شوند؛ تعداد و قیمت واحد را خودتان وارد کنید.</p>
+        <div class="row head">
+          <span>قلم</span>
+          <span>تعداد</span>
+          <span>قیمت واحد (هزار تومان)</span>
+          <span>جمع</span>
+        </div>
+        <div id="manual-rows"></div>
+        <div class="section-total">
+          <span>جمع قیمت دستی</span>
+          <b id="manual-total">۰</b>
+        </div>
+      </section>
+
+      <div class="footer-note" id="status-note">
+        وضعیت به‌روزرسانی: در حال بارگذاری…
+      </div>
+    </main>
+
+    <p class="page-footer">
+      کد این پروژه روی <a href="#" id="repo-link" target="_blank" rel="noopener">GitHub</a> نگه‌داری می‌شود
+    </p>
+  </div>
+
+  <script src="js/app.js"></script>
+</body>
+</html>

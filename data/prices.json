@@ -1,0 +1,13 @@
+{
+  "updated_at": null,
+  "coins": {
+    "emami": null,
+    "nim": null,
+    "robe": null
+  },
+  "funds": {},
+  "status": {
+    "coins": "not_run_yet",
+    "funds": "not_run_yet"
+  }
+}
