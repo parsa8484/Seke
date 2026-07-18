@@ -3,8 +3,10 @@
 این فایل توسط GitHub Actions (به‌صورت زمان‌بندی‌شده) اجرا می‌شود و نتیجه را
 در data/prices.json ذخیره می‌کند تا سایت استاتیک آن را نمایش دهد.
 
-کلید API از متغیر محیطی BRSAPI_KEY خوانده می‌شود (در GitHub Secrets تنظیم می‌شود)
-و هرگز داخل کد یا فایل خروجی نوشته نمی‌شود.
+قیمت سکه‌ها مستقیم از tgju.org اسکرپ می‌شود (نیازی به کلید API نیست).
+قیمت صندوق‌ها (اختیاری) از BrsApi.ir خوانده می‌شود؛ کلید آن از متغیر محیطی
+BRSAPI_KEY خوانده می‌شود (در GitHub Secrets تنظیم می‌شود) و هرگز داخل کد یا
+فایل خروجی نوشته نمی‌شود.
 """
 
 import json
@@ -13,6 +15,7 @@ import sys
 from datetime import datetime, timezone, timedelta
 
 import requests
+from bs4 import BeautifulSoup
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA_PATH = os.path.join(ROOT, "data", "prices.json")
@@ -22,10 +25,12 @@ API_KEY = os.environ.get("BRSAPI_KEY", "").strip()
 
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36",
-    "Accept": "application/json, text/plain, */*",
+    "Accept-Language": "fa-IR,fa;q=0.9,en-US;q=0.8",
 }
 
 TEHRAN_TZ = timezone(timedelta(hours=3, minutes=30))
+TGJU_URL = "https://www.tgju.org/"
+TGJU_ROWS = {"emami": "retail_sekee", "nim": "retail_nim", "robe": "retail_rob"}
 
 
 def log(msg):
@@ -42,7 +47,7 @@ def load_previous():
     return {"coins": {}, "funds": {}, "status": {}, "updated_at": None}
 
 
-def fetch_json(url, label):
+def fetch_json(url):
     try:
         resp = requests.get(url, headers=HEADERS, timeout=20)
         resp.raise_for_status()
@@ -89,10 +94,38 @@ def normalize_list(data):
 PRICE_KEYS = ["price", "value", "nav", "pl", "final", "close", "Price", "Value", "NAV", "Final", "Close"]
 
 
-def main():
-    if not API_KEY:
-        log("⚠️  BRSAPI_KEY تنظیم نشده. از GitHub Secrets استفاده کنید.")
+def fetch_coin_prices_from_tgju():
+    """قیمت سکه‌ها رو مستقیم از صفحه‌ی اصلی tgju.org اسکرپ می‌کنه."""
+    try:
+        resp = requests.get(TGJU_URL, headers=HEADERS, timeout=15)
+        resp.raise_for_status()
+    except requests.exceptions.RequestException as e:
+        return {}, f"خطای اتصال به tgju.org: {e}"
 
+    soup = BeautifulSoup(resp.text, "html.parser")
+    prices = {}
+    missing = []
+
+    for key, row_name in TGJU_ROWS.items():
+        row = soup.find("tr", {"data-market-row": row_name})
+        if row is None:
+            missing.append(row_name)
+            continue
+        cell = row.find("td", class_="nf")
+        if cell is None:
+            missing.append(row_name)
+            continue
+        try:
+            prices[key] = int(cell.text.strip().replace(",", "")) / 10000
+        except ValueError:
+            missing.append(row_name)
+
+    if missing:
+        return prices, f"ردیف(های) {', '.join(missing)} پیدا نشد (ساختار سایت شاید تغییر کرده)"
+    return prices, None
+
+
+def main():
     previous = load_previous()
     now = datetime.now(TEHRAN_TZ).isoformat()
 
@@ -103,57 +136,52 @@ def main():
         "status": {},
     }
 
-    # ---------- طلا و سکه ----------
-    gold_url = f"https://Api.BrsApi.ir/Market/Gold_Currency_Pro.php?key={API_KEY}&section=gold"
-    gold_data, err = fetch_json(gold_url, "Gold_Currency_Pro")
+    # ---------- طلا و سکه (از tgju.org) ----------
+    coin_prices, err = fetch_coin_prices_from_tgju()
+    result["coins"].update(coin_prices)
 
-    if err:
+    if err and not coin_prices:
         log(f"خطا در دریافت طلا/سکه: {err}")
         result["status"]["coins"] = f"error: {err}"
+    elif err:
+        log(f"⚠️  {err}")
+        result["status"]["coins"] = f"partial ({len(coin_prices)}/{len(TGJU_ROWS)})"
     else:
-        items = normalize_list(gold_data)
-        coin_map = {"emami": "امامی", "nim": "نیم", "robe": "ربع"}
-        ok_count = 0
-        for key, keyword in coin_map.items():
-            matches = find_items_containing(items, keyword)
-            if matches:
-                price = extract_price(matches[0], PRICE_KEYS)
-                if price is not None:
-                    result["coins"][key] = price / 10000
-                    ok_count += 1
-                    continue
-            log(f"⚠️  قیمت '{keyword}' پیدا نشد.")
-        result["status"]["coins"] = "ok" if ok_count == len(coin_map) else f"partial ({ok_count}/{len(coin_map)})"
+        result["status"]["coins"] = "ok"
 
-    # ---------- صندوق‌ها ----------
+    # ---------- صندوق‌ها (اختیاری، از BrsApi.ir) ----------
     try:
         with open(FUNDS_CONFIG_PATH, "r", encoding="utf-8") as f:
             funds_config = json.load(f)
     except (OSError, json.JSONDecodeError):
         funds_config = []
 
-    nav_url = f"https://BrsApi.ir/Api/Tsetmc/Nav.php?key={API_KEY}"
-    nav_data, err = fetch_json(nav_url, "Nav ETF")
-
-    if err:
-        log(f"خطا در دریافت صندوق‌ها: {err}")
-        result["status"]["funds"] = f"error: {err}"
+    if not API_KEY:
+        log("⚠️  BRSAPI_KEY تنظیم نشده؛ به‌روزرسانی صندوق‌ها رد می‌شود.")
+        result["status"]["funds"] = "skipped: no BRSAPI_KEY"
     else:
-        items = normalize_list(nav_data)
-        ok_count = 0
-        for fund in funds_config:
-            matches = find_items_containing(items, fund["keyword"])
-            if matches:
-                price = extract_price(matches[0], PRICE_KEYS)
-                if price is not None:
-                    result["funds"][fund["key"]] = {
-                        "label": fund["label"],
-                        "price": price,
-                    }
-                    ok_count += 1
-                    continue
-            log(f"⚠️  صندوق با کلیدواژه‌ی '{fund['keyword']}' پیدا نشد.")
-        result["status"]["funds"] = "ok" if ok_count == len(funds_config) else f"partial ({ok_count}/{len(funds_config)})"
+        nav_url = f"https://BrsApi.ir/Api/Tsetmc/Nav.php?key={API_KEY}"
+        nav_data, err = fetch_json(nav_url)
+
+        if err:
+            log(f"خطا در دریافت صندوق‌ها: {err}")
+            result["status"]["funds"] = f"error: {err}"
+        else:
+            items = normalize_list(nav_data)
+            ok_count = 0
+            for fund in funds_config:
+                matches = find_items_containing(items, fund["keyword"])
+                if matches:
+                    price = extract_price(matches[0], PRICE_KEYS)
+                    if price is not None:
+                        result["funds"][fund["key"]] = {
+                            "label": fund["label"],
+                            "price": price,
+                        }
+                        ok_count += 1
+                        continue
+                log(f"⚠️  صندوق با کلیدواژه‌ی '{fund['keyword']}' پیدا نشد.")
+            result["status"]["funds"] = "ok" if ok_count == len(funds_config) else f"partial ({ok_count}/{len(funds_config)})"
 
     os.makedirs(os.path.dirname(DATA_PATH), exist_ok=True)
     with open(DATA_PATH, "w", encoding="utf-8") as f:
