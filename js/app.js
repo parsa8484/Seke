@@ -10,9 +10,7 @@ const COIN_ITEMS = [
 // اقلامی که قیمتشون از API نمیاد و باید دستی وارد بشه
 // quantity و price پیش‌فرض فقط اولین بار (وقتی هنوز چیزی در localStorage نیست) استفاده می‌شن
 const MANUAL_ITEMS = [
-  { key: "kahroba", label: "کهربا", defaultQty: 0, defaultPrice: 15700 },
   { key: "fezar", label: "فزر", defaultQty: 0, defaultPrice: 7900 },
-  { key: "zar", label: "زر", defaultQty: 0, defaultPrice: 41950 },
   { key: "ganj", label: "گنج", defaultQty: 0, defaultPrice: 13780 },
   { key: "tala", label: "طلای آب‌شده (گرم)", defaultQty: 7.23, defaultPrice: 19000 },
 ];
