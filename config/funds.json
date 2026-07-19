@@ -1,7 +1,7 @@
 [
-  {
-    "key": "gold_fund",
-    "label": "صندوق طلا",
-    "keyword": "طلا"
-  }
+  { "key": "kahroba", "label": "صندوق طلای کهربا", "keyword": "کهربا" },
+  { "key": "ayar", "label": "صندوق طلای عیار", "keyword": "عیار" },
+  { "key": "gohar", "label": "صندوق طلای گوهر", "keyword": "گوهر" },
+  { "key": "zar", "label": "صندوق طلای زر", "keyword": "زر" },
+  { "key": "mesghal", "label": "صندوق طلای مثقال", "keyword": "مثقال" }
 ]
