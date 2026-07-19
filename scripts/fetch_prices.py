@@ -63,6 +63,8 @@ def find_items_containing(items, keyword):
     for item in items:
         if not isinstance(item, dict):
             continue
+        if item.get("cs_id") != 68:
+            continue
         for value in item.values():
             if isinstance(value, str) and keyword in value:
                 matches.append(item)
@@ -91,7 +93,7 @@ def normalize_list(data):
     return []
 
 
-PRICE_KEYS = ["price", "value", "nav", "pl", "final", "close", "Price", "Value", "NAV", "Final", "Close"]
+PRICE_KEYS = ["pc", "pl", "price", "value", "nav", "final", "close", "Price", "Value", "NAV", "Final", "Close"]
 
 
 def fetch_coin_prices_from_tgju():
@@ -160,7 +162,7 @@ def main():
         log("⚠️  BRSAPI_KEY تنظیم نشده؛ به‌روزرسانی صندوق‌ها رد می‌شود.")
         result["status"]["funds"] = "skipped: no BRSAPI_KEY"
     else:
-        nav_url = f"https://BrsApi.ir/Api/Tsetmc/Nav.php?key={API_KEY}"
+        nav_url = f"https://BrsApi.ir/Api/Tsetmc/AllSymbols.php?key={API_KEY}&type=1"
         nav_data, err = fetch_json(nav_url)
 
         if err:
