@@ -1,13 +1,34 @@
 {
-  "updated_at": "2026-07-19T12:18:23.501520+03:30",
+  "updated_at": "2026-07-19T12:21:02.292837+03:30",
   "coins": {
     "emami": 190980.0,
     "nim": 97890.0,
     "robe": 54800.0
   },
-  "funds": {},
+  "funds": {
+    "kahroba": {
+      "label": "صندوق طلای کهربا",
+      "price": 179148.0
+    },
+    "ayar": {
+      "label": "صندوق طلای عیار",
+      "price": 524120.0
+    },
+    "gohar": {
+      "label": "صندوق طلای گوهر",
+      "price": 887819.0
+    },
+    "zar": {
+      "label": "صندوق طلای زر",
+      "price": 793353.0
+    },
+    "mesghal": {
+      "label": "صندوق طلای مثقال",
+      "price": 149912.0
+    }
+  },
   "status": {
     "coins": "ok",
-    "funds": "skipped: no BRSAPI_KEY"
+    "funds": "ok"
   }
 }
