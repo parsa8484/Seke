@@ -1,5 +1,5 @@
 {
-  "updated_at": "2026-07-21T09:23:49.958488+03:30",
+  "updated_at": "2026-07-21T12:03:29.945510+03:30",
   "coins": {
     "emami": 184010.0,
     "nim": 93340.0,
@@ -8,27 +8,27 @@
   "funds": {
     "kahroba": {
       "label": "صندوق طلای کهربا",
-      "price": 173016.0
+      "price": 10548.0
     },
     "ayar": {
       "label": "صندوق طلای عیار",
-      "price": 10357.0
+      "price": 507238.0
     },
     "gohar": {
       "label": "صندوق طلای گوهر",
-      "price": 855701.0
+      "price": 864424.0
     },
     "zar": {
       "label": "صندوق طلای زر",
-      "price": 12288.0
+      "price": 767924.0
     },
     "mesghal": {
       "label": "صندوق طلای مثقال",
-      "price": 144515.0
+      "price": 145323.0
     }
   },
   "status": {
-    "coins": "ok",
+    "coins": "error: خطای اتصال به tgju.org: HTTPSConnectionPool(host='www.tgju.org', port=443): Read timed out. (read timeout=15)",
     "funds": "ok"
   }
 }
