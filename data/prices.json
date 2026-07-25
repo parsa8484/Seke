@@ -1,7 +1,7 @@
 {
-  "updated_at": "2026-07-25T11:40:00.422128+03:30",
+  "updated_at": "2026-07-25T14:05:58.836045+03:30",
   "coins": {
-    "emami": 185510.0,
+    "emami": 185000.0,
     "nim": 94400.0,
     "robe": 53300.0
   },
@@ -29,6 +29,6 @@
   },
   "status": {
     "coins": "ok",
-    "funds": "ok"
+    "funds": "error: خطای اتصال: HTTPSConnectionPool(host='brsapi.ir', port=443): Read timed out. (read timeout=20)"
   }
 }
