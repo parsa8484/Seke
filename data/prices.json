@@ -1,5 +1,5 @@
 {
-  "updated_at": "2026-07-25T19:35:56.862985+03:30",
+  "updated_at": "2026-07-25T22:41:15.332765+03:30",
   "coins": {
     "emami": 185510.0,
     "nim": 94400.0,
@@ -28,7 +28,7 @@
     }
   },
   "status": {
-    "coins": "ok",
+    "coins": "error: خطای اتصال به tgju.org: HTTPSConnectionPool(host='www.tgju.org', port=443): Max retries exceeded with url: / (Caused by SSLError(SSLCertVerificationError(1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: certificate has expired (_ssl.c:1016)')))",
     "funds": "ok"
   }
 }
