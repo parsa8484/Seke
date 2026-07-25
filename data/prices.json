@@ -1,34 +1,34 @@
 {
-  "updated_at": "2026-07-25T14:05:58.836045+03:30",
+  "updated_at": "2026-07-25T17:10:20.694052+03:30",
   "coins": {
-    "emami": 185000.0,
+    "emami": 185480.0,
     "nim": 94400.0,
     "robe": 53300.0
   },
   "funds": {
     "kahroba": {
       "label": "صندوق طلای کهربا",
-      "price": 179600.0
+      "price": 175339.0
     },
     "ayar": {
       "label": "صندوق طلای عیار",
-      "price": 10194.0
+      "price": 507748.0
     },
     "gohar": {
       "label": "صندوق طلای گوهر",
-      "price": 890845.0
+      "price": 868424.0
     },
     "zar": {
       "label": "صندوق طلای زر",
-      "price": 12078.0
+      "price": 36580.0
     },
     "mesghal": {
       "label": "صندوق طلای مثقال",
-      "price": 149843.0
+      "price": 146239.0
     }
   },
   "status": {
     "coins": "ok",
-    "funds": "error: خطای اتصال: HTTPSConnectionPool(host='brsapi.ir', port=443): Read timed out. (read timeout=20)"
+    "funds": "ok"
   }
 }
