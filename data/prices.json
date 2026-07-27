@@ -1,5 +1,5 @@
 {
-  "updated_at": "2026-07-27T23:08:09.350143+03:30",
+  "updated_at": "2026-07-28T01:40:41.714189+03:30",
   "coins": {
     "emami": 186490.0,
     "nim": 95900.0,
@@ -29,6 +29,6 @@
   },
   "status": {
     "coins": "ok",
-    "funds": "ok"
+    "funds": "error: خطای اتصال: 404 Client Error: Not Found for url: https://brsapi.ir/Api/Tsetmc/AllSymbols.php?key=BTkJkMe8Q42RaN3pfZrYBbL7WakWcERq&type=1"
   }
 }
