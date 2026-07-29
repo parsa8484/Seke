@@ -1,0 +1,40 @@
+{
+  "expo": {
+    "name": "دارایی من",
+    "slug": "sekeh",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/images/icon.png",
+    "scheme": "sekeh",
+    "userInterfaceStyle": "dark",
+    "backgroundColor": "#0B0F17",
+    "splash": {
+      "image": "./assets/images/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#0B0F17"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "ir.sekeh.app"
+    },
+    "android": {
+      "package": "ir.sekeh.app",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/images/adaptive-icon.png",
+        "backgroundColor": "#0B0F17"
+      }
+    },
+    "web": {
+      "bundler": "metro",
+      "output": "static",
+      "favicon": "./assets/images/favicon.png"
+    },
+    "plugins": [
+      "expo-router",
+      "expo-secure-store"
+    ],
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}

@@ -1,0 +1,79 @@
+// Prisma schema — دیتابیس SQLite برای پروژه‌ی دارایی (سکه/طلا/صندوق)
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// کاربران سایت/اپ
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  displayName  String?
+  role         String   @default("user") // "user" | "admin"
+  isActive     Boolean  @default(true) // غیرفعال‌شده توسط ادمین نمی‌تونه لاگین کنه
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  holdings Holding[]
+
+  @@map("users")
+}
+
+// کاتالوگ دارایی‌های قابل‌ردیابی: سکه، صندوق طلا/نقره، دستی و ...
+// نگه‌داشتن این به‌صورت جدول (نه enum سخت) باعث می‌شه بعداً نقره و آیتم‌های
+// جدید رو بدون migration ساختاری اضافه کنیم — فقط یک ردیف جدید insert می‌شه.
+model Asset {
+  id            String    @id @default(cuid())
+  key           String    @unique // مثل "coin_emami" ، "fund_kahroba" ، "manual_tala"
+  category      String // "coin" | "fund" | "silver_fund" | "manual"
+  label         String // نمایش فارسی: "سکه امامی (تمام)"
+  unit          String    @default("عدد") // عدد | گرم | واحد
+  sourceType    String // "tgju" | "brsapi" | "manual"
+  sourceRef     String? // شناسه‌ی ردیف در منبع (مثل data-market-row یا symbol)
+  isActive      Boolean   @default(true)
+  sortOrder     Int       @default(0)
+  currentPrice  Float? // آخرین قیمت کش‌شده (تومان)
+  priceUpdatedAt DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  holdings      Holding[]
+  priceHistory  PriceHistory[]
+
+  @@map("assets")
+}
+
+// تعداد/مقداری که هر کاربر از هر دارایی داره
+model Holding {
+  id        String   @id @default(cuid())
+  userId    String
+  assetId   String
+  quantity  Float    @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  asset Asset @relation(fields: [assetId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, assetId])
+  @@map("holdings")
+}
+
+// تاریخچه‌ی قیمت‌ها (برای نمودار روند در آینده)
+model PriceHistory {
+  id        String   @id @default(cuid())
+  assetId   String
+  price     Float
+  recordedAt DateTime @default(now())
+
+  asset Asset @relation(fields: [assetId], references: [id], onDelete: Cascade)
+
+  @@index([assetId, recordedAt])
+  @@map("price_history")
+}
