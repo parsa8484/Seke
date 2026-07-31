@@ -7,7 +7,7 @@ import React, {
   useCallback,
 } from "react";
 import * as SecureStore from "expo-secure-store";
-import { TOKEN_KEY } from "../api/client";
+import { TOKEN_KEY, isAuthRejection } from "../api/client";
 import * as authApi from "../api/auth";
 import { User } from "../api/types";
 
@@ -25,8 +25,6 @@ interface AuthContextValue {
   hasRememberedSession: boolean;
   /** توکن به‌خاطرسپرده را برمی‌گرداند. باید بعد از تأیید بیومتریک صدا زده شود */
   signInWithRememberedSession: () => Promise<void>;
-  /** پاک‌کردن ورود سریع این دستگاه */
-  forgetDevice: () => Promise<void>;
   signIn: (identifier: string, password: string) => Promise<void>;
   signUp: (
     email: string,
@@ -48,36 +46,47 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [hasRememberedSession, setHasRememberedSession] = useState(false);
 
   // هنگام باز شدن اپ: اگه توکن قبلاً ذخیره شده، سعی کن کاربر رو بازیابی کن
-  // تا مجبور نباشه دوباره لاگین کنه
+  // تا مجبور نباشه دوباره لاگین کنه.
+  //
+  // نکته‌ی مهم: توکن را *خوش‌بینانه* می‌پذیریم (setToken قبل از تأیید سرور).
+  // قبلاً هر خطایی در fetchMe — حتی قطع موقت اینترنت یا خواب‌رفتن سرور —
+  // باعث پاک‌شدن توکن و پرتاب کاربر به صفحه‌ی ورود می‌شد؛ روی شبکه‌ی موبایل
+  // همین چند ثانیه بی‌اتصالی کافی بود که کاربر کامل لاگ‌اوت شود و مجبور شود
+  // دوباره با رمز وارد شود. فقط رد واقعی از سمت سرور (توکن نامعتبر/منقضی،
+  // حساب غیرفعال) باید لاگ‌اوت واقعی بسازد.
   useEffect(() => {
     (async () => {
-      try {
-        const savedToken = await SecureStore.getItemAsync(TOKEN_KEY);
-        let remembered = await SecureStore.getItemAsync(REMEMBER_KEY);
+      const savedToken = await SecureStore.getItemAsync(TOKEN_KEY);
+      let remembered = await SecureStore.getItemAsync(REMEMBER_KEY);
 
-        // کاربری که *قبل* از اضافه‌شدن ورود سریع لاگین کرده، توکن به‌خاطرسپرده
-        // ندارد و دکمه‌ی اثر انگشت برایش ظاهر نمی‌شد مگر یک بار خروج و ورود
-        // دستی می‌کرد. جلسه‌ی فعالِ موجود را همین‌جا به‌عنوان توکن ورود سریع
-        // ثبت می‌کنیم.
-        if (savedToken && !remembered) {
-          await SecureStore.setItemAsync(REMEMBER_KEY, savedToken);
-          remembered = savedToken;
-        }
-        setHasRememberedSession(Boolean(remembered));
+      // کاربری که *قبل* از اضافه‌شدن ورود سریع لاگین کرده، توکن به‌خاطرسپرده
+      // ندارد و دکمه‌ی اثر انگشت برایش ظاهر نمی‌شد مگر یک بار خروج و ورود
+      // دستی می‌کرد. جلسه‌ی فعالِ موجود را همین‌جا به‌عنوان توکن ورود سریع
+      // ثبت می‌کنیم.
+      if (savedToken && !remembered) {
+        await SecureStore.setItemAsync(REMEMBER_KEY, savedToken);
+        remembered = savedToken;
+      }
+      setHasRememberedSession(Boolean(remembered));
 
-        if (savedToken) {
-          setToken(savedToken);
+      if (savedToken) {
+        setToken(savedToken);
+        try {
           const me = await authApi.fetchMe();
           setUser(me);
+        } catch (err) {
+          if (isAuthRejection(err)) {
+            await SecureStore.deleteItemAsync(TOKEN_KEY);
+            await SecureStore.deleteItemAsync(REMEMBER_KEY);
+            setHasRememberedSession(false);
+            setToken(null);
+            setUser(null);
+          }
+          // وگرنه (خطای شبکه/سرور): توکن دست‌نخورده می‌ماند، کاربر همچنان
+          // وارد است؛ اطلاعات پروفایل با اولین کوئری موفق بعدی پر می‌شود
         }
-      } catch {
-        // توکن نامعتبر/منقضی - پاکش کن و کاربر رو به صفحه‌ی ورود بفرست
-        await SecureStore.deleteItemAsync(TOKEN_KEY);
-        setToken(null);
-        setUser(null);
-      } finally {
-        setIsLoading(false);
       }
+      setIsLoading(false);
     })();
   }, []);
 
@@ -97,33 +106,37 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     [persistSession]
   );
 
-  const forgetDevice = useCallback(async () => {
-    await SecureStore.deleteItemAsync(REMEMBER_KEY);
-    setHasRememberedSession(false);
-  }, []);
-
   /**
    * ورود بدون رمز با توکنی که از آخرین ورود مانده. صدا زدنش باید *بعد* از
    * تأیید بیومتریک باشد؛ خودش هویت‌سنجی نمی‌کند.
+   *
+   * توکن *خوش‌بینانه* و بلافاصله ست می‌شود (قبل از تأیید سرور) تا کاربر
+   * فوراً وارد اپ شود؛ درخواست fetchMe در پس‌زمینه پروفایل را کامل می‌کند.
+   * فقط اگر سرور واقعاً توکن را رد کند (۴۰۱/۴۰۳/۴۰۴) لاگ‌اوت واقعی رخ
+   * می‌دهد — قطعی موقت شبکه یا سرور کاربر را بیرون نمی‌اندازد.
    */
   const signInWithRememberedSession = useCallback(async () => {
     const saved = await SecureStore.getItemAsync(REMEMBER_KEY);
     if (!saved) {
       throw new Error("ورود سریع روی این دستگاه ثبت نشده است");
     }
-    // اول توکن را می‌نویسیم چون اینترسپتور axios آن را از SecureStore می‌خواند
     await SecureStore.setItemAsync(TOKEN_KEY, saved);
+    setToken(saved);
     try {
       const me = await authApi.fetchMe();
-      setToken(saved);
       setUser(me);
     } catch (err) {
-      // توکن منقضی یا حساب غیرفعال شده — ورود سریع دیگر معتبر نیست
-      await SecureStore.deleteItemAsync(TOKEN_KEY);
-      await forgetDevice();
-      throw new Error("ورود سریع منقضی شده؛ لطفاً با رمز عبور وارد شوید");
+      if (isAuthRejection(err)) {
+        await SecureStore.deleteItemAsync(TOKEN_KEY);
+        await SecureStore.deleteItemAsync(REMEMBER_KEY);
+        setHasRememberedSession(false);
+        setToken(null);
+        throw new Error("ورود سریع منقضی شده؛ لطفاً با رمز عبور وارد شوید");
+      }
+      // خطای شبکه/سرور: کاربر همچنان وارد می‌ماند (توکن معتبر بود، فقط
+      // نتوانستیم پروفایل را همین الان بگیریم)
     }
-  }, [forgetDevice]);
+  }, []);
 
   const signUp = useCallback(
     async (
@@ -140,8 +153,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   );
 
   const signOut = useCallback(async () => {
-    // REMEMBER_KEY عمداً پاک نمی‌شود: کاربر بعد از خروج هم می‌تواند با اثر
-    // انگشت برگردد. برای پاک‌کردن کامل، forgetDevice() هست.
+    // REMEMBER_KEY عمداً پاک نمی‌شود: کاربر بعد از خروج هم باید بتواند فوراً
+    // با اثر انگشت برگردد، بدون سؤال اضافه یا تایپ دوباره‌ی رمز.
     await SecureStore.deleteItemAsync(TOKEN_KEY);
     setToken(null);
     setUser(null);
@@ -170,7 +183,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       signOut,
       refreshUser,
       signInWithRememberedSession,
-      forgetDevice,
     }),
     [
       user,
@@ -183,7 +195,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       signOut,
       refreshUser,
       signInWithRememberedSession,
-      forgetDevice,
     ]
   );
 

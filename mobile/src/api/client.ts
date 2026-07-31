@@ -22,6 +22,18 @@ apiClient.interceptors.request.use(async (config) => {
   return config;
 });
 
+/**
+ * فقط رد واقعیِ سرور (توکن نامعتبر/منقضی، حساب غیرفعال، کاربر پیدا نشد) را
+ * تشخیص می‌دهد. خطای شبکه یا قطعی موقت سرور را false برمی‌گرداند تا کد
+ * صداکننده بتواند فرق بگذارد بین «واقعاً باید لاگ‌اوت کرد» و «فقط موقتاً به
+ * سرور نرسیدیم» — قبلاً هر دو یکسان مدیریت می‌شدند و یک قطعی چندثانیه‌ای
+ * اینترنت کاربر را کامل از حساب بیرون می‌انداخت.
+ */
+export function isAuthRejection(err: unknown): boolean {
+  if (!axios.isAxiosError(err) || !err.response) return false;
+  return [401, 403, 404].includes(err.response.status);
+}
+
 // پیام خطای فارسیِ خوانا از پاسخ سرور استخراج می‌کنه (یا یه پیام عمومی)
 export function extractErrorMessage(err: unknown): string {
   if (axios.isAxiosError(err)) {

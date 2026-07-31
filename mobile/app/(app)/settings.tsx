@@ -5,7 +5,6 @@ import {
   Pressable,
   ScrollView,
   Switch,
-  Alert,
 } from "react-native";
 import { router } from "expo-router";
 import { AppText } from "../../src/components/AppText";
@@ -49,7 +48,7 @@ function SettingsLink({
 }
 
 export default function SettingsScreen() {
-  const { user, signOut, hasRememberedSession, forgetDevice } = useAuth();
+  const { user, signOut } = useAuth();
   const { colors, preference, setPreference } = useTheme();
   const { isEnabled, setEnabled, support, methodLabel } = useLock();
   const [lockError, setLockError] = useState<string | null>(null);
@@ -70,29 +69,10 @@ export default function SettingsScreen() {
     if (!ok) setLockError("تأیید هویت انجام نشد، تنظیمات تغییر نکرد");
   }
 
-  async function doLogout(forget: boolean) {
-    if (forget) await forgetDevice();
+  // ورود با اثر انگشت بعد از خروج هم فعال می‌ماند — سوال اضافه لازم نیست
+  async function handleLogout() {
     await signOut();
     router.replace("/(auth)/login");
-  }
-
-  function handleLogout() {
-    // بعد از خروج، «ورود با اثر انگشت» همچنان کار می‌کند مگر اینکه کاربر
-    // صریحاً بخواهد این دستگاه فراموش شود (مثلاً گوشی را واگذار می‌کند).
-    if (!hasRememberedSession) return doLogout(false);
-    Alert.alert(
-      "خروج از حساب",
-      "ورود سریع با اثر انگشت روی این گوشی باقی بماند؟",
-      [
-        { text: "انصراف", style: "cancel" },
-        { text: "بله، باقی بماند", onPress: () => doLogout(false) },
-        {
-          text: "نه، حذف شود",
-          style: "destructive",
-          onPress: () => doLogout(true),
-        },
-      ]
-    );
   }
 
   const initial = (user?.displayName || user?.username || "؟")
