@@ -52,10 +52,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     (async () => {
       try {
-        setHasRememberedSession(
-          Boolean(await SecureStore.getItemAsync(REMEMBER_KEY))
-        );
         const savedToken = await SecureStore.getItemAsync(TOKEN_KEY);
+        let remembered = await SecureStore.getItemAsync(REMEMBER_KEY);
+
+        // کاربری که *قبل* از اضافه‌شدن ورود سریع لاگین کرده، توکن به‌خاطرسپرده
+        // ندارد و دکمه‌ی اثر انگشت برایش ظاهر نمی‌شد مگر یک بار خروج و ورود
+        // دستی می‌کرد. جلسه‌ی فعالِ موجود را همین‌جا به‌عنوان توکن ورود سریع
+        // ثبت می‌کنیم.
+        if (savedToken && !remembered) {
+          await SecureStore.setItemAsync(REMEMBER_KEY, savedToken);
+          remembered = savedToken;
+        }
+        setHasRememberedSession(Boolean(remembered));
+
         if (savedToken) {
           setToken(savedToken);
           const me = await authApi.fetchMe();
