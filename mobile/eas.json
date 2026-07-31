@@ -13,6 +13,9 @@
       "channel": "preview",
       "android": {
         "buildType": "apk"
+      },
+      "env": {
+        "EXPO_PUBLIC_API_URL": "http://188.209.153.164:4000"
       }
     },
     "production": {
@@ -20,6 +23,9 @@
       "channel": "production",
       "android": {
         "buildType": "apk"
+      },
+      "env": {
+        "EXPO_PUBLIC_API_URL": "http://188.209.153.164:4000"
       }
     },
     "production-aab": {
@@ -27,6 +33,9 @@
       "channel": "production",
       "android": {
         "buildType": "app-bundle"
+      },
+      "env": {
+        "EXPO_PUBLIC_API_URL": "http://188.209.153.164:4000"
       }
     }
   },
