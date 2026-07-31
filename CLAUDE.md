@@ -133,15 +133,18 @@ git checkout -- backend/package.json   # npm approve-scripts edits this; it bloc
 git pull
 cd backend
 npm install
-npm run build
 npx prisma migrate deploy
+pm2 stop sekeh-api                      # frees query_engine-windows.dll.node
+npx prisma generate                     # REQUIRED — see below, it does not happen on its own
+npm run build
 npx prisma db seed
-pm2 restart sekeh-api                   # never `pm2 restart all` — see PM2 note above
+pm2 start sekeh-api                     # never `pm2 restart all` — see PM2 note above
 ```
 
-Two recurring snags on that box:
+Three recurring snags on that box:
 - `npm approve-scripts` writes an `allowScripts` block into `backend/package.json`, which makes the next `git pull` abort. Discarding the local change (line 2 above) is safe — the already-installed `node_modules` keep working.
-- `npx prisma generate` can fail with `EPERM ... query_engine-windows.dll.node` because the running PM2 process holds the DLL open. It's harmless when the engine version is unchanged (the TS client still regenerates). If a schema change really doesn't take effect, `pm2 stop sekeh-api` → `npx prisma generate` → `pm2 start sekeh-api`.
+- **`npx prisma generate` must be run explicitly on every schema change.** That same `allowScripts` block suppresses Prisma's postinstall hook, and `npm install` is usually a no-op ("up to date") because backend deps rarely change — so the generated client silently stays on the old schema. Symptom: `npm run build` fails with `Property 'priceAlert' does not exist on type 'PrismaClient'` (or whatever the new model/field is) and `prisma db seed` fails with `Unknown argument`. This bit the 2026-07-31 deploy: `migrate deploy` had already applied the DB changes, so the schema was fine while the client was stale, and PM2 restarted onto the *previous* `dist/` because the build had failed.
+- `npx prisma generate` fails with `EPERM ... query_engine-windows.dll.node` if the PM2 process is running and holding the DLL — hence the `pm2 stop` before it in the sequence above.
 
 Because the API is plain HTTP, the Android app needs `usesCleartextTraffic` — configured via the `expo-build-properties` plugin in `mobile/app.json`. Don't remove it unless the server gets HTTPS.
 
