@@ -6,6 +6,7 @@ import {
   Platform,
   ScrollView,
   Pressable,
+  Alert,
 } from "react-native";
 import { Link, router } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
@@ -52,20 +53,22 @@ export default function LoginScreen() {
   }
 
   async function handleBiometricLogin() {
-    setError(null);
     setBioLoading(true);
     try {
       const ok = await authenticate(`ورود به دارایار با ${methodLabel}`);
       if (!ok) {
-        setError("تأیید هویت انجام نشد");
+        // پیام فرم بالای صفحه‌ست، دور از دکمه‌ای که کاربر همین الان زده —
+        // Alert تضمین می‌کنه که حتماً دیده بشه، نه اینکه انگار «هیچ اتفاقی
+        // نیفتاد» به نظر برسه.
+        Alert.alert("ورود ناموفق", "تأیید هویت انجام نشد. دوباره تلاش کنید.");
         return;
       }
       await signInWithRememberedSession();
       router.replace("/(app)");
     } catch (err) {
-      setError(
-        err instanceof Error ? err.message : extractErrorMessage(err)
-      );
+      const message =
+        err instanceof Error ? err.message : extractErrorMessage(err);
+      Alert.alert("ورود ناموفق", message);
     } finally {
       setBioLoading(false);
     }
