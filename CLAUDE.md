@@ -64,6 +64,8 @@ Login accepts **either** an email or a username in a single `identifier` field �
 
 Every login attempt, successful or not, is written to `LoginEvent`. Recording is deliberately non-throwing — a logging failure must never block a valid login.
 
+**Biometric quick-login.** Every successful login also writes the JWT to a second SecureStore key (`sekeh_biometric_token`) that `signOut` deliberately does *not* clear, so the login screen can offer "ورود با اثر انگشت". Consequences to keep in mind: the token stays on the device for up to its 30-day expiry after logout, and because `disableDeviceFallback: false`, the phone's own PIN/pattern also unlocks it — the same tradeoff banking apps make. Settings' logout asks whether to keep it, and `forgetDevice()` clears it. If a restored token is rejected by `/api/auth/me` (expired, or `isActive: false`), both keys are wiped and the user is sent back to password login.
+
 ### Backend request flow
 `src/index.ts` wires Express + routes. Routes: `auth.routes.ts` (register/login/me, change-password, profile PATCH, login-history), `prices.routes.ts` (public asset+price list, plus `GET /:key/history` for trend charts), `market.routes.ts` (public full tgju price list + `GET /history/:symbol`), `holdings.routes.ts` (authenticated per-user quantities *and buy prices*, bulk PUT), `alerts.routes.ts` (price-alert CRUD + Expo push-token registration), `admin.routes.ts` (stats, user CRUD, password reset, per-user login history, asset catalog CRUD, tgju symbol picker, manual price set, manual refresh trigger — all zod-validated, all behind `requireAdmin`). Self-modification (an admin changing their own role/isActive) is explicitly blocked in the admin routes — but an admin *may* reset any password including their own.
 
@@ -76,13 +78,14 @@ Every login attempt, successful or not, is written to `LoginEvent`. Recording is
 ### Mobile app structure (Expo Router, file-based)
 ```
 app/
-  _layout.tsx            root: React Query + Theme + Lock + Auth providers (in that order)
-  (auth)/                 pre-login: login.tsx, register.tsx
+  _layout.tsx            root: SafeArea + React Query + Theme + Lock + Auth providers (in that order)
+  (auth)/                 pre-login: login.tsx (password + biometric quick-login), register.tsx
   (app)/                  post-login tabs
-    _layout.tsx            tab bar; admin tab conditionally shown via href: isAdmin ? undefined : null
+    _layout.tsx            tab bar; order = order of the Tabs.Screen declarations (market first, then index);
+                           admin tab conditionally shown via href: isAdmin ? undefined : null
     index.tsx              holdings dashboard: donut chart, profit/loss, per-asset trend modal
     market/                "قیمت‌ها" tab — full tgju list
-      index.tsx             searchable/filterable list of all catalogued symbols
+      index.tsx             searchable/filterable list, 5 sort modes, category section headers
       [symbol].tsx          detail: day high/low/change + line chart with range picker
     settings.tsx           profile summary, account/security links, biometric-lock switch, theme picker, logout
     security/              hidden from the tab bar via href: null; reached from settings
@@ -95,9 +98,11 @@ app/
       assets/index.tsx, assets/[id].tsx  catalog CRUD, tgju symbol picker, manual price entry, active toggle, delete
 src/
   api/                    axios client + per-domain API functions (auth, holdings, market, alerts, admin) + shared types.ts
-  context/AuthContext.tsx  token persistence via expo-secure-store; exposes `isAdmin`, `refreshUser`
+  context/AuthContext.tsx  token persistence via expo-secure-store; exposes `isAdmin`, `refreshUser`,
+                           and the biometric quick-login pair (`hasRememberedSession`, `signInWithRememberedSession`)
   context/ThemeContext.tsx dark/light/system preference, persisted via AsyncStorage
-  context/LockContext.tsx  biometric app lock; preference in AsyncStorage, re-locks after 60s in background
+  context/LockContext.tsx  biometric app lock; preference in AsyncStorage, re-locks after 60s in background;
+                           `authenticate()` prompts without touching lock state (used by the login screen)
   services/notifications.ts permission + Expo push token registration
   components/              shared UI (PrimaryButton has a "danger" variant; DonutChart, LineChart, LockScreen)
   utils/jalali.ts          Gregorian→Jalali conversion + Persian formatting
