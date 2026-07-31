@@ -45,38 +45,54 @@ On this dev machine (~4GB RAM), Metro can OOM-crash with the default multi-worke
 
 This means adding a new trackable asset (e.g. silver) is a DB insert (via `prisma/seed.ts` or the admin panel's asset CRUD), not a code change — unless the price source itself is new, in which case a small fetcher needs to be added to `priceService.ts`.
 
+Categories in use: `coin`, `fund`, `currency` (USD, tether), `crypto` (bitcoin), `manual`. The mobile dashboard's `CATEGORY_LABELS`/`CATEGORY_ORDER` in `app/(app)/index.tsx` control grouping and display order — a new category needs an entry there or it won't render.
+
 tgju.org prices are Rial-denominated and must be divided by 10 to get Toman; BrsApi prices are already Toman. This conversion lives in `priceService.ts` — don't reintroduce it elsewhere.
+
+Some tgju rows appear **twice** on the page with different denominations (`crypto-bitcoin` shows a USD figure first, then the Rial one). So a tgju `sourceRef` may carry an occurrence index: `"crypto-bitcoin#1"` means "the second matching row". Without the suffix the first match is used. Getting this wrong is silent and severe — the USD figure divided by 10 looks like a plausible number. Everything is stored in Toman so portfolio totals stay summable; the app derives the USD display for `crypto` assets by dividing by the `currency_usd` price.
 
 ### Auth & roles
 JWT (`backend/src/utils/jwt.ts`) + bcrypt password hashing. `User.role` (`"user"|"admin"`) and `User.isActive` gate access. `backend/src/middleware/admin.ts`'s `requireAdmin` re-reads the role from the DB on every request rather than trusting the JWT payload, so admin promotion/demotion and account deactivation take effect immediately without waiting for token expiry. `isActive: false` users are rejected at login and at `/api/auth/me` with 403.
 
+Login accepts **either** an email or a username in a single `identifier` field — the route branches on whether it contains `@`. `User.username` is nullable (accounts predating the feature have none) and compared case-insensitively; since SQLite/Prisma has no `mode: "insensitive"`, that lookup is a parameterized `LOWER()` raw query in `auth.routes.ts`.
+
+Every login attempt, successful or not, is written to `LoginEvent`. Recording is deliberately non-throwing — a logging failure must never block a valid login.
+
 ### Backend request flow
-`src/index.ts` wires Express + routes. Routes: `auth.routes.ts` (register/login/me), `prices.routes.ts` (public asset+price list), `holdings.routes.ts` (authenticated per-user quantities, bulk PUT), `admin.routes.ts` (stats, user CRUD, asset catalog CRUD, manual price set, manual refresh trigger — all zod-validated, all behind `requireAdmin`). Self-modification (an admin changing their own role/isActive) is explicitly blocked in the admin routes.
+`src/index.ts` wires Express + routes. Routes: `auth.routes.ts` (register/login/me, change-password, profile PATCH, login-history), `prices.routes.ts` (public asset+price list), `holdings.routes.ts` (authenticated per-user quantities, bulk PUT), `admin.routes.ts` (stats, user CRUD, password reset, per-user login history, asset catalog CRUD, manual price set, manual refresh trigger — all zod-validated, all behind `requireAdmin`). Self-modification (an admin changing their own role/isActive) is explicitly blocked in the admin routes — but an admin *may* reset any password including their own.
 
 ### Mobile app structure (Expo Router, file-based)
 ```
 app/
-  _layout.tsx            root: React Query + Auth providers
+  _layout.tsx            root: React Query + Theme + Auth providers (in that order)
   (auth)/                 pre-login: login.tsx, register.tsx
   (app)/                  post-login tabs
     _layout.tsx            tab bar; admin tab conditionally shown via href: isAdmin ? undefined : null
-    index.tsx              holdings dashboard
-    settings.tsx           profile / logout
+    index.tsx              holdings dashboard + donut chart of composition
+    settings.tsx           profile summary, account/security links, theme picker, logout
+    security/              hidden from the tab bar via href: null; reached from settings
+      profile.tsx, change-password.tsx, login-history.tsx
     admin/                 admin panel, embedded in the same app/login — not a separate surface
       index.tsx             stats overview + manual price refresh
-      users/index.tsx, users/[id].tsx   list/detail, role & active toggles, delete
+      users/index.tsx, users/[id].tsx   list/detail, role & active toggles, password reset, login history, delete
       assets/index.tsx, assets/[id].tsx  catalog CRUD, manual price entry, active toggle, delete
 src/
   api/                    axios client + per-domain API functions (auth.ts, holdings.ts, admin.ts) + shared types.ts
-  context/AuthContext.tsx  token persistence via expo-secure-store; exposes `isAdmin`
-  components/              shared UI (PrimaryButton has a "danger" variant for destructive actions)
-  theme/colors.ts          dark + gold theme tokens
+  context/AuthContext.tsx  token persistence via expo-secure-store; exposes `isAdmin`, `refreshUser`
+  context/ThemeContext.tsx dark/light/system preference, persisted via AsyncStorage
+  components/              shared UI (PrimaryButton has a "danger" variant; DonutChart, LoginHistoryList)
+  theme/colors.ts          dark + light palettes, spacing/radius/typography tokens, chart palette
 ```
 Server state (queries/mutations) goes through `@tanstack/react-query`; don't add ad-hoc `useEffect` fetching for anything the admin panel or dashboard already has a query for.
 
+**Theming**: colors are dynamic — read them from `useTheme()`, never by importing the `colors` object (that export is a dark-only compatibility shim; using it silently breaks light mode). Screens that need themed `StyleSheet`s define `const makeStyles = (colors: AppColors) => StyleSheet.create({...})` at module scope and call `const styles = makeStyles(colors)` inside the component.
+
+Adding a route under `app/` requires Expo Router's generated types (`.expo/types/router.d.ts`) to be refreshed before `tsc --noEmit` passes; they regenerate when Metro/EAS runs.
+
 ## Notes
 - `backend/.env` holds real secrets (`JWT_SECRET`, `BRSAPI_KEY`) — gitignored, never commit it.
-- BrsApi.ir may be unreachable from sandboxed dev environments (connects but hangs) — this is network-level blocking specific to some environments, not a code bug; it's expected to work from the actual VPS.
+- **BrsApi is currently broken (as of 2026-07-31), so all gold-fund prices are null.** `https://BrsApi.ir/Api/Tsetmc/AllSymbols.php` returns 404 from every network tried (the VPS, a dev machine, and the legacy site's GitHub Action) — the endpoint itself moved or was withdrawn, it is not a key or firewall problem. Fixing it means finding the current BrsApi endpoint and updating `fetchBrsApiPrices` in `priceService.ts`. Coins/currency/crypto (tgju) are unaffected.
+- The legacy `scripts/fetch_prices.py` used to write the raw BrsApi URL — key included — into `data/prices.json` on error, which published the key to the public repo. That is redacted now (`redact_secrets`), but the key remains in git history, so it should be rotated at brsapi.ir.
 - Deployment: `backend/DEPLOY.md` describes an Ubuntu/SSH flow, but the actual production VPS is **Windows Server** (accessed via RDP), so those steps don't apply as-is — treat DEPLOY.md as a reference for *what* needs to happen (Node install, build, migrate, run persistently, expose a port), not literal commands.
 - That Windows VPS already runs **another, unrelated project under PM2**. Any backend deployment there must not disturb it:
   - Don't run `pm2 delete all`, `pm2 kill`, or anything that stops/restarts *all* processes — target this app by its own PM2 name only.
