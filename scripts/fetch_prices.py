@@ -33,8 +33,12 @@ TGJU_URL = "https://www.tgju.org/"
 TGJU_ROWS = {"emami": "retail_sekee", "nim": "retail_nim", "robe": "retail_rob"}
 
 
+def redact_secrets(text):
+    return text.replace(API_KEY, "***") if API_KEY else text
+
+
 def log(msg):
-    print(msg, file=sys.stderr)
+    print(redact_secrets(msg), file=sys.stderr)
 
 
 def load_previous():
@@ -53,7 +57,7 @@ def fetch_json(url):
         resp.raise_for_status()
         return resp.json(), None
     except requests.exceptions.RequestException as e:
-        return None, f"خطای اتصال: {e}"
+        return None, f"خطای اتصال: {redact_secrets(str(e))}"
     except json.JSONDecodeError:
         return None, "پاسخ JSON معتبر نبود"
 

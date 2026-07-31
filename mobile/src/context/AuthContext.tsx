@@ -16,13 +16,16 @@ interface AuthContextValue {
   token: string | null;
   isLoading: boolean; // در حال چک‌کردن توکن ذخیره‌شده هنگام باز شدن اپ
   isAdmin: boolean;
-  signIn: (email: string, password: string) => Promise<void>;
+  signIn: (identifier: string, password: string) => Promise<void>;
   signUp: (
     email: string,
+    username: string,
     password: string,
     displayName?: string
   ) => Promise<void>;
   signOut: () => Promise<void>;
+  // بعد از ویرایش پروفایل، اطلاعات کاربر رو از سرور تازه‌سازی می‌کنه
+  refreshUser: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
@@ -54,16 +57,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     })();
   }, []);
 
-  const signIn = useCallback(async (email: string, password: string) => {
-    const res = await authApi.login(email, password);
+  const signIn = useCallback(async (identifier: string, password: string) => {
+    const res = await authApi.login(identifier, password);
     await SecureStore.setItemAsync(TOKEN_KEY, res.token);
     setToken(res.token);
     setUser(res.user);
   }, []);
 
   const signUp = useCallback(
-    async (email: string, password: string, displayName?: string) => {
-      const res = await authApi.register(email, password, displayName);
+    async (
+      email: string,
+      username: string,
+      password: string,
+      displayName?: string
+    ) => {
+      const res = await authApi.register(email, username, password, displayName);
       await SecureStore.setItemAsync(TOKEN_KEY, res.token);
       setToken(res.token);
       setUser(res.user);
@@ -77,11 +85,29 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setUser(null);
   }, []);
 
+  const refreshUser = useCallback(async () => {
+    try {
+      setUser(await authApi.fetchMe());
+    } catch {
+      // شکست در تازه‌سازی نباید کاربر رو از حساب بیرون بندازه؛
+      // اطلاعات قبلی همچنان معتبره
+    }
+  }, []);
+
   const isAdmin = user?.role === "admin";
 
   const value = useMemo(
-    () => ({ user, token, isLoading, isAdmin, signIn, signUp, signOut }),
-    [user, token, isLoading, isAdmin, signIn, signUp, signOut]
+    () => ({
+      user,
+      token,
+      isLoading,
+      isAdmin,
+      signIn,
+      signUp,
+      signOut,
+      refreshUser,
+    }),
+    [user, token, isLoading, isAdmin, signIn, signUp, signOut, refreshUser]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

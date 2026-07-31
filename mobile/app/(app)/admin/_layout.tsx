@@ -1,12 +1,13 @@
 import React from "react";
 import { Redirect, Stack } from "expo-router";
 import { useAuth } from "../../../src/context/AuthContext";
-import { colors } from "../../../src/theme/colors";
+import { useTheme } from "../../../src/context/ThemeContext";
 
 // حتی اگه تب ادمین برای کاربر عادی مخفیه، این گارد جلوی دسترسی مستقیم به
 // مسیرهای زیرمجموعه‌ی /admin رو هم می‌گیره
 export default function AdminLayout() {
   const { isAdmin } = useAuth();
+  const { colors } = useTheme();
 
   if (!isAdmin) {
     return <Redirect href="/(app)" />;

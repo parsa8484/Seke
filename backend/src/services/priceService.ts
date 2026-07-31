@@ -27,8 +27,17 @@ async function fetchTgjuPrices(
     const $ = cheerio.load(html);
 
     for (const asset of targets) {
-      const row = $(`[data-market-row="${asset.sourceRef}"]`);
+      // بعضی ردیف‌ها (مثل crypto-bitcoin) در صفحه دو بار میان: یک بار با قیمت
+      // دلاری و یک بار ریالی. برای همین sourceRef می‌تونه با "#شماره" بگه کدوم
+      // تکرار مدنظره — مثلا "crypto-bitcoin#1" یعنی دومین ردیف. بدون این پسوند
+      // اولین ردیف برداشته می‌شه (رفتار قبلی، برای بقیه‌ی دارایی‌ها درست).
+      const [rowId, indexPart] = (asset.sourceRef as string).split("#");
+      const wantedIndex = indexPart ? Number(indexPart) : 0;
+
+      const rows = $(`[data-market-row="${rowId}"]`);
+      const row = rows.eq(Number.isNaN(wantedIndex) ? 0 : wantedIndex);
       if (!row.length) continue;
+
       const priceText = row.find("td").eq(0).text().trim().replace(/,/g, "");
       const rialPrice = Number(priceText);
       if (!Number.isNaN(rialPrice) && rialPrice > 0) {

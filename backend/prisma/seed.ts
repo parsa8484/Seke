@@ -25,6 +25,15 @@ const ASSETS: Array<{
   { key: "fund_zar", category: "fund", label: "صندوق طلای زر", unit: "واحد", sourceType: "brsapi", sourceRef: "زر", sortOrder: 13 },
   { key: "fund_mesghal", category: "fund", label: "صندوق طلای مثقال", unit: "واحد", sourceType: "brsapi", sourceRef: "مثقال", sortOrder: 14 },
 
+  // ارز — از tgju.org و به ریال، پس مثل بقیه /۱۰ می‌شن
+  { key: "currency_usd", category: "currency", label: "دلار آمریکا", unit: "دلار", sourceType: "tgju", sourceRef: "price_dollar_rl", sortOrder: 15 },
+  { key: "currency_tether", category: "currency", label: "تتر (USDT)", unit: "تتر", sourceType: "tgju", sourceRef: "crypto-tether-irr", sortOrder: 16 },
+
+  // رمزارز — بیت‌کوین در صفحه‌ی tgju دو بار میاد: ردیف اول قیمت دلاری و ردیف
+  // دوم قیمت ریالیه. برای اینکه جمع کل دارایی‌ها (که تومانیه) درست بمونه ردیف
+  // ریالی رو می‌گیریم (#1) و معادل دلاریش رو اپ خودش از نرخ دلار حساب می‌کنه.
+  { key: "crypto_bitcoin", category: "crypto", label: "بیت‌کوین", unit: "BTC", sourceType: "tgju", sourceRef: "crypto-bitcoin#1", sortOrder: 17 },
+
   // آیتم‌های دستی (بدون API - کاربر خودش قیمت رو وارد می‌کنه؛ فعلاً بدون منبع آنلاین)
   { key: "manual_fezar", category: "manual", label: "فزر", sourceType: "manual", sortOrder: 20 },
   { key: "manual_ganj", category: "manual", label: "گنج", sourceType: "manual", sortOrder: 21 },

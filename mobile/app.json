@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "دارایی من",
+    "name": "دارایار",
     "slug": "sekeh",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -31,10 +31,32 @@
     },
     "plugins": [
       "expo-router",
-      "expo-secure-store"
+      "expo-secure-store",
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "usesCleartextTraffic": true
+          }
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true
+    },
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/20b848fd-7d14-43c4-a740-dfe4bcf703a5"
+    },
+    "extra": {
+      "router": {
+        "origin": false
+      },
+      "eas": {
+        "projectId": "20b848fd-7d14-43c4-a740-dfe4bcf703a5"
+      }
     }
   }
 }

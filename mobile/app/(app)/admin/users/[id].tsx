@@ -1,25 +1,35 @@
-import React from "react";
+import React, { useState } from "react";
 import { View, StyleSheet, ScrollView, Switch, Alert } from "react-native";
 import { useLocalSearchParams, router } from "expo-router";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { AppText } from "../../../../src/components/AppText";
 import { Card } from "../../../../src/components/Card";
 import { PrimaryButton } from "../../../../src/components/PrimaryButton";
+import { TextField } from "../../../../src/components/TextField";
+import { LoginHistoryList } from "../../../../src/components/LoginHistoryList";
 import {
   fetchAdminUserDetail,
   updateAdminUser,
   deleteAdminUser,
+  resetUserPassword,
+  fetchUserLoginHistory,
 } from "../../../../src/api/admin";
 import { extractErrorMessage } from "../../../../src/api/client";
 import { useAuth } from "../../../../src/context/AuthContext";
-import { colors, spacing } from "../../../../src/theme/colors";
+import { spacing } from "../../../../src/theme/colors";
+import { useTheme } from "../../../../src/context/ThemeContext";
+import type { AppColors } from "../../../../src/theme/colors";
 import { formatToman } from "../../../../src/utils/format";
 import { AdminUserHolding } from "../../../../src/api/types";
 
 export default function AdminUserDetailScreen() {
+  const { colors } = useTheme();
+  const styles = makeStyles(colors);
   const { id } = useLocalSearchParams<{ id: string }>();
   const { user: me } = useAuth();
   const queryClient = useQueryClient();
+  const [newPassword, setNewPassword] = useState("");
+  const [showPasswordForm, setShowPasswordForm] = useState(false);
 
   const { data, isLoading, error } = useQuery({
     queryKey: ["admin-user", id],
@@ -45,6 +55,41 @@ export default function AdminUserDetailScreen() {
     },
     onError: (err) => Alert.alert("خطا", extractErrorMessage(err)),
   });
+
+  const resetPasswordMutation = useMutation({
+    mutationFn: () => resetUserPassword(id, newPassword),
+    onSuccess: (res) => {
+      setNewPassword("");
+      setShowPasswordForm(false);
+      Alert.alert("انجام شد", res.message);
+    },
+    onError: (err) => Alert.alert("خطا", extractErrorMessage(err)),
+  });
+
+  const { data: loginHistory } = useQuery({
+    queryKey: ["admin-user-login-history", id],
+    queryFn: () => fetchUserLoginHistory(id),
+    enabled: !!id,
+  });
+
+  function handleResetPassword() {
+    if (newPassword.length < 6) {
+      Alert.alert("خطا", "رمز جدید باید حداقل ۶ کاراکتر باشد");
+      return;
+    }
+    Alert.alert(
+      "تغییر رمز عبور",
+      "رمز عبور این کاربر تغییر می‌کند و رمز قبلی‌اش دیگر کار نخواهد کرد. مطمئنی؟",
+      [
+        { text: "انصراف", style: "cancel" },
+        {
+          text: "تغییر بده",
+          style: "destructive",
+          onPress: () => resetPasswordMutation.mutate(),
+        },
+      ]
+    );
+  }
 
   function confirmDelete() {
     Alert.alert(
@@ -85,6 +130,9 @@ export default function AdminUserDetailScreen() {
     <ScrollView style={styles.flex} contentContainerStyle={styles.container}>
       <Card style={styles.profileCard}>
         <AppText style={styles.email}>{data.user.email}</AppText>
+        {data.user.username ? (
+          <AppText style={styles.meta}>@{data.user.username}</AppText>
+        ) : null}
         <AppText style={styles.meta}>
           {data.user.displayName || "بدون نام"}
         </AppText>
@@ -121,6 +169,51 @@ export default function AdminUserDetailScreen() {
         ) : null}
       </Card>
 
+      <Card style={styles.settingsCard}>
+        <AppText style={styles.cardTitle}>رمز عبور</AppText>
+        {showPasswordForm ? (
+          <>
+            <TextField
+              label="رمز عبور جدید"
+              placeholder="حداقل ۶ کاراکتر"
+              secureTextEntry
+              autoCapitalize="none"
+              value={newPassword}
+              onChangeText={setNewPassword}
+              hint="کاربر با این رمز جدید وارد می‌شود — حتماً به او اطلاع دهید"
+            />
+            <View style={styles.buttonRow}>
+              <PrimaryButton
+                title="انصراف"
+                variant="outline"
+                onPress={() => {
+                  setShowPasswordForm(false);
+                  setNewPassword("");
+                }}
+                style={styles.flexButton}
+              />
+              <PrimaryButton
+                title="تغییر رمز"
+                onPress={handleResetPassword}
+                loading={resetPasswordMutation.isPending}
+                style={styles.flexButton}
+              />
+            </View>
+          </>
+        ) : (
+          <PrimaryButton
+            title="🔑 تغییر رمز عبور این کاربر"
+            variant="outline"
+            onPress={() => setShowPasswordForm(true)}
+          />
+        )}
+      </Card>
+
+      <AppText style={styles.sectionTitle}>تاریخچه‌ی ورود</AppText>
+      <Card style={styles.settingsCard}>
+        <LoginHistoryList events={loginHistory ?? []} />
+      </Card>
+
       <AppText style={styles.sectionTitle}>دارایی‌های ثبت‌شده</AppText>
       {data.holdings.length === 0 ? (
         <AppText style={styles.empty}>این کاربر هنوز دارایی ثبت نکرده</AppText>
@@ -151,7 +244,8 @@ export default function AdminUserDetailScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (colors: AppColors) =>
+  StyleSheet.create({
   flex: { flex: 1, backgroundColor: colors.background },
   center: {
     flex: 1,
@@ -171,6 +265,15 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.xs,
   },
   settingLabel: { fontSize: 14 },
+  cardTitle: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: colors.goldSoft,
+    textAlign: "right",
+    marginBottom: spacing.sm,
+  },
+  buttonRow: { flexDirection: "row-reverse", gap: spacing.sm },
+  flexButton: { flex: 1 },
   selfNote: {
     fontSize: 12,
     color: colors.textMuted,

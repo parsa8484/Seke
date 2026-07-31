@@ -1,25 +1,41 @@
 import React, { useState } from "react";
 import { TextInput, View, StyleSheet, TextInputProps } from "react-native";
 import { AppText } from "./AppText";
-import { colors, radius, spacing } from "../theme/colors";
+import { useTheme } from "../context/ThemeContext";
+import { radius, spacing } from "../theme/colors";
 
 interface Props extends TextInputProps {
   label?: string;
   error?: string;
+  hint?: string;
 }
 
-export function TextField({ label, error, style, ...props }: Props) {
+export function TextField({ label, error, hint, style, ...props }: Props) {
+  const { colors } = useTheme();
   const [focused, setFocused] = useState(false);
+
+  const borderColor = error
+    ? colors.danger
+    : focused
+    ? colors.gold
+    : colors.border;
 
   return (
     <View style={styles.wrapper}>
-      {label ? <AppText style={styles.label}>{label}</AppText> : null}
+      {label ? (
+        <AppText style={[styles.label, { color: colors.textSecondary }]}>
+          {label}
+        </AppText>
+      ) : null}
       <TextInput
         placeholderTextColor={colors.textMuted}
         style={[
           styles.input,
-          focused && styles.inputFocused,
-          !!error && styles.inputError,
+          {
+            backgroundColor: colors.surface,
+            borderColor,
+            color: colors.textPrimary,
+          },
           style,
         ]}
         onFocus={(e) => {
@@ -32,39 +48,30 @@ export function TextField({ label, error, style, ...props }: Props) {
         }}
         {...props}
       />
-      {error ? <AppText style={styles.errorText}>{error}</AppText> : null}
+      {error ? (
+        <AppText style={[styles.helperText, { color: colors.danger }]}>
+          {error}
+        </AppText>
+      ) : hint ? (
+        <AppText style={[styles.helperText, { color: colors.textMuted }]}>
+          {hint}
+        </AppText>
+      ) : null}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   wrapper: { marginBottom: spacing.md },
-  label: {
-    fontSize: 13,
-    color: colors.textSecondary,
-    marginBottom: spacing.xs,
-  },
+  label: { fontSize: 13, marginBottom: spacing.xs },
   input: {
     height: 52,
     borderRadius: radius.md,
-    backgroundColor: colors.surface,
     borderWidth: 1,
-    borderColor: colors.border,
     paddingHorizontal: spacing.md,
-    color: colors.textPrimary,
     textAlign: "right",
     writingDirection: "rtl",
     fontSize: 15,
   },
-  inputFocused: {
-    borderColor: colors.gold,
-  },
-  inputError: {
-    borderColor: colors.danger,
-  },
-  errorText: {
-    color: colors.danger,
-    fontSize: 12,
-    marginTop: spacing.xs,
-  },
+  helperText: { fontSize: 12, marginTop: spacing.xs },
 });

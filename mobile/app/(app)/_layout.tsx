@@ -3,14 +3,15 @@ import { Redirect, Tabs } from "expo-router";
 import { View, ActivityIndicator, StyleSheet } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useAuth } from "../../src/context/AuthContext";
-import { colors } from "../../src/theme/colors";
+import { useTheme } from "../../src/context/ThemeContext";
 
 export default function AppLayout() {
   const { token, isLoading, isAdmin } = useAuth();
+  const { colors } = useTheme();
 
   if (isLoading) {
     return (
-      <View style={styles.center}>
+      <View style={[styles.center, { backgroundColor: colors.background }]}>
         <ActivityIndicator color={colors.gold} size="large" />
       </View>
     );
@@ -61,6 +62,8 @@ export default function AppLayout() {
           ),
         }}
       />
+      {/* زیرصفحه‌های امنیت از داخل تنظیمات باز می‌شن، نه از تب‌بار */}
+      <Tabs.Screen name="security" options={{ href: null }} />
     </Tabs>
   );
 }
@@ -70,6 +73,5 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: colors.background,
   },
 });

@@ -1,17 +1,38 @@
 import React from "react";
 import { View, StyleSheet, ViewProps } from "react-native";
-import { colors, radius, spacing } from "../theme/colors";
+import { useTheme } from "../context/ThemeContext";
+import { radius, spacing } from "../theme/colors";
 
 export function Card({ style, ...props }: ViewProps) {
-  return <View style={[styles.card, style]} {...props} />;
+  const { colors, isDark } = useTheme();
+  return (
+    <View
+      style={[
+        styles.card,
+        {
+          backgroundColor: colors.surface,
+          borderColor: colors.border,
+        },
+        // در تم روشن کارت‌ها بدون سایه گم می‌شن چون هم‌رنگ پس‌زمینه‌ان
+        !isDark && styles.lightShadow,
+        style,
+      ]}
+      {...props}
+    />
+  );
 }
 
 const styles = StyleSheet.create({
   card: {
-    backgroundColor: colors.surface,
     borderRadius: radius.lg,
     borderWidth: 1,
-    borderColor: colors.border,
     padding: spacing.md,
+  },
+  lightShadow: {
+    shadowColor: "#8A7A55",
+    shadowOpacity: 0.12,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 2,
   },
 });

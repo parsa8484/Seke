@@ -14,7 +14,9 @@ import {
   setAdminAssetPrice,
 } from "../../../../src/api/admin";
 import { extractErrorMessage } from "../../../../src/api/client";
-import { colors, spacing, radius } from "../../../../src/theme/colors";
+import { spacing, radius } from "../../../../src/theme/colors";
+import { useTheme } from "../../../../src/context/ThemeContext";
+import type { AppColors } from "../../../../src/theme/colors";
 import { AssetSourceType, AdminAsset } from "../../../../src/api/types";
 
 const SOURCE_OPTIONS: { value: AssetSourceType; label: string; hint: string }[] = [
@@ -24,6 +26,8 @@ const SOURCE_OPTIONS: { value: AssetSourceType; label: string; hint: string }[] 
 ];
 
 export default function AdminAssetEditScreen() {
+  const { colors } = useTheme();
+  const styles = makeStyles(colors);
   const { id } = useLocalSearchParams<{ id: string }>();
   const isNew = id === "new";
   const queryClient = useQueryClient();
@@ -244,7 +248,8 @@ export default function AdminAssetEditScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (colors: AppColors) =>
+  StyleSheet.create({
   flex: { flex: 1, backgroundColor: colors.background },
   container: { padding: spacing.md, paddingBottom: spacing.xl * 2 },
   sectionLabel: {

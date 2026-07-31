@@ -11,12 +11,17 @@ import { AppText } from "../../src/components/AppText";
 import { TextField } from "../../src/components/TextField";
 import { PrimaryButton } from "../../src/components/PrimaryButton";
 import { useAuth } from "../../src/context/AuthContext";
+import { useTheme } from "../../src/context/ThemeContext";
 import { extractErrorMessage } from "../../src/api/client";
-import { colors, spacing } from "../../src/theme/colors";
+import { spacing } from "../../src/theme/colors";
+
+const USERNAME_PATTERN = /^[a-zA-Z0-9._]+$/;
 
 export default function RegisterScreen() {
   const { signUp } = useAuth();
+  const { colors } = useTheme();
   const [displayName, setDisplayName] = useState("");
+  const [username, setUsername] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -25,8 +30,18 @@ export default function RegisterScreen() {
 
   async function handleSubmit() {
     setError(null);
-    if (!email.trim() || !password) {
-      setError("ایمیل و رمز عبور را وارد کنید");
+    const trimmedUsername = username.trim();
+
+    if (!email.trim() || !password || !trimmedUsername) {
+      setError("ایمیل، نام کاربری و رمز عبور را وارد کنید");
+      return;
+    }
+    if (trimmedUsername.length < 3) {
+      setError("نام کاربری باید حداقل ۳ کاراکتر باشد");
+      return;
+    }
+    if (!USERNAME_PATTERN.test(trimmedUsername)) {
+      setError("نام کاربری فقط می‌تواند حروف انگلیسی، عدد، نقطه و زیرخط باشد");
       return;
     }
     if (password.length < 6) {
@@ -37,9 +52,15 @@ export default function RegisterScreen() {
       setError("رمز عبور و تکرار آن یکسان نیستند");
       return;
     }
+
     setLoading(true);
     try {
-      await signUp(email.trim(), password, displayName.trim() || undefined);
+      await signUp(
+        email.trim(),
+        trimmedUsername,
+        password,
+        displayName.trim() || undefined
+      );
       router.replace("/(app)");
     } catch (err) {
       setError(extractErrorMessage(err));
@@ -50,7 +71,7 @@ export default function RegisterScreen() {
 
   return (
     <KeyboardAvoidingView
-      style={styles.flex}
+      style={[styles.flex, { backgroundColor: colors.background }]}
       behavior={Platform.OS === "ios" ? "padding" : undefined}
     >
       <ScrollView
@@ -58,8 +79,10 @@ export default function RegisterScreen() {
         keyboardShouldPersistTaps="handled"
       >
         <View style={styles.header}>
-          <AppText style={styles.brand}>ساخت حساب کاربری</AppText>
-          <AppText style={styles.subtitle}>
+          <AppText style={[styles.brand, { color: colors.gold }]}>
+            ساخت حساب کاربری
+          </AppText>
+          <AppText style={[styles.subtitle, { color: colors.textSecondary }]}>
             دارایی‌های خود را یک‌بار وارد کنید، همیشه در دسترس بماند
           </AppText>
         </View>
@@ -71,9 +94,19 @@ export default function RegisterScreen() {
           onChangeText={setDisplayName}
         />
         <TextField
+          label="نام کاربری"
+          placeholder="parsa_84"
+          hint="با این نام کاربری هم می‌توانید وارد شوید"
+          autoCapitalize="none"
+          autoCorrect={false}
+          value={username}
+          onChangeText={setUsername}
+        />
+        <TextField
           label="ایمیل"
           placeholder="example@email.com"
           autoCapitalize="none"
+          autoCorrect={false}
           keyboardType="email-address"
           value={email}
           onChangeText={setEmail}
@@ -82,6 +115,7 @@ export default function RegisterScreen() {
           label="رمز عبور"
           placeholder="حداقل ۶ کاراکتر"
           secureTextEntry
+          autoCapitalize="none"
           value={password}
           onChangeText={setPassword}
         />
@@ -89,18 +123,27 @@ export default function RegisterScreen() {
           label="تکرار رمز عبور"
           placeholder="••••••••"
           secureTextEntry
+          autoCapitalize="none"
           value={confirmPassword}
           onChangeText={setConfirmPassword}
         />
 
-        {error ? <AppText style={styles.error}>{error}</AppText> : null}
+        {error ? (
+          <AppText style={[styles.error, { color: colors.danger }]}>
+            {error}
+          </AppText>
+        ) : null}
 
         <PrimaryButton title="ثبت‌نام" onPress={handleSubmit} loading={loading} />
 
         <View style={styles.footer}>
-          <AppText style={styles.footerText}>قبلاً ثبت‌نام کرده‌اید؟</AppText>
+          <AppText style={{ color: colors.textSecondary }}>
+            قبلاً ثبت‌نام کرده‌اید؟
+          </AppText>
           <Link href="/(auth)/login" asChild>
-            <AppText style={styles.link}>وارد شوید</AppText>
+            <AppText style={[styles.link, { color: colors.gold }]}>
+              وارد شوید
+            </AppText>
           </Link>
         </View>
       </ScrollView>
@@ -109,22 +152,20 @@ export default function RegisterScreen() {
 }
 
 const styles = StyleSheet.create({
-  flex: { flex: 1, backgroundColor: colors.background },
+  flex: { flex: 1 },
   container: {
     flexGrow: 1,
     justifyContent: "center",
     padding: spacing.lg,
   },
   header: { marginBottom: spacing.xl, alignItems: "flex-end" },
-  brand: { fontSize: 26, fontWeight: "800", color: colors.gold },
+  brand: { fontSize: 26, fontWeight: "800" },
   subtitle: {
     fontSize: 14,
-    color: colors.textSecondary,
     marginTop: spacing.sm,
     textAlign: "right",
   },
   error: {
-    color: colors.danger,
     marginBottom: spacing.md,
     textAlign: "right",
   },
@@ -134,6 +175,5 @@ const styles = StyleSheet.create({
     marginTop: spacing.lg,
     gap: spacing.xs,
   },
-  footerText: { color: colors.textSecondary },
-  link: { color: colors.gold, fontWeight: "700" },
+  link: { fontWeight: "700" },
 });

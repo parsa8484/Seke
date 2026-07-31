@@ -13,6 +13,9 @@ datasource db {
 model User {
   id           String   @id @default(cuid())
   email        String   @unique
+  // نام کاربری اختیاری — کاربر می‌تونه با ایمیل یا با این وارد بشه.
+  // برای حساب‌های قدیمی (قبل از این قابلیت) خالیه.
+  username     String?  @unique
   passwordHash String
   displayName  String?
   role         String   @default("user") // "user" | "admin"
@@ -20,9 +23,25 @@ model User {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  holdings Holding[]
+  holdings    Holding[]
+  loginEvents LoginEvent[]
 
   @@map("users")
+}
+
+// تاریخچه‌ی ورود — هم موفق هم ناموفق، تا کاربر تلاش‌های مشکوک رو ببینه
+model LoginEvent {
+  id        String   @id @default(cuid())
+  userId    String
+  success   Boolean  @default(true)
+  ipAddress String?
+  userAgent String?
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@map("login_events")
 }
 
 // کاتالوگ دارایی‌های قابل‌ردیابی: سکه، صندوق طلا/نقره، دستی و ...

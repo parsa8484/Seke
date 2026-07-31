@@ -3,6 +3,7 @@ export type Role = "user" | "admin";
 export interface User {
   id: string;
   email: string;
+  username: string | null;
   displayName: string | null;
   role: Role;
 }
@@ -10,6 +11,14 @@ export interface User {
 export interface AuthResponse {
   token: string;
   user: User;
+}
+
+export interface LoginEvent {
+  id: string;
+  success: boolean;
+  ipAddress: string | null;
+  userAgent: string | null;
+  createdAt: string;
 }
 
 export interface HoldingItem {
@@ -42,6 +51,7 @@ export interface AdminStats {
 export interface AdminUser {
   id: string;
   email: string;
+  username: string | null;
   displayName: string | null;
   role: Role;
   isActive: boolean;
@@ -61,6 +71,7 @@ export interface AdminUserDetail {
   user: {
     id: string;
     email: string;
+    username: string | null;
     displayName: string | null;
     role: Role;
     isActive: boolean;

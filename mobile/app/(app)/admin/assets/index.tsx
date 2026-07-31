@@ -7,7 +7,9 @@ import { AppText } from "../../../../src/components/AppText";
 import { PrimaryButton } from "../../../../src/components/PrimaryButton";
 import { fetchAdminAssets } from "../../../../src/api/admin";
 import { extractErrorMessage } from "../../../../src/api/client";
-import { colors, spacing, radius } from "../../../../src/theme/colors";
+import { spacing, radius } from "../../../../src/theme/colors";
+import { useTheme } from "../../../../src/context/ThemeContext";
+import type { AppColors } from "../../../../src/theme/colors";
 import { formatToman } from "../../../../src/utils/format";
 import { AdminAsset } from "../../../../src/api/types";
 
@@ -18,6 +20,8 @@ const SOURCE_LABEL: Record<string, string> = {
 };
 
 export default function AdminAssetsScreen() {
+  const { colors } = useTheme();
+  const styles = makeStyles(colors);
   const { data, isLoading, isRefetching, refetch, error } = useQuery({
     queryKey: ["admin-assets"],
     queryFn: fetchAdminAssets,
@@ -84,7 +88,8 @@ export default function AdminAssetsScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (colors: AppColors) =>
+  StyleSheet.create({
   flex: { flex: 1, backgroundColor: colors.background },
   center: {
     flex: 1,

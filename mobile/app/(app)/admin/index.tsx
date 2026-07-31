@@ -8,10 +8,14 @@ import { Card } from "../../../src/components/Card";
 import { PrimaryButton } from "../../../src/components/PrimaryButton";
 import { fetchAdminStats, triggerPriceRefresh } from "../../../src/api/admin";
 import { extractErrorMessage } from "../../../src/api/client";
-import { colors, spacing, radius } from "../../../src/theme/colors";
+import { spacing, radius } from "../../../src/theme/colors";
+import { useTheme } from "../../../src/context/ThemeContext";
+import type { AppColors } from "../../../src/theme/colors";
 import { formatToman } from "../../../src/utils/format";
 
 function StatBox({ label, value }: { label: string; value: string }) {
+  const { colors } = useTheme();
+  const styles = makeStyles(colors);
   return (
     <View style={styles.statBox}>
       <AppText style={styles.statValue}>{value}</AppText>
@@ -31,6 +35,8 @@ function NavRow({
   subtitle: string;
   onPress: () => void;
 }) {
+  const { colors } = useTheme();
+  const styles = makeStyles(colors);
   return (
     <Pressable onPress={onPress} style={({ pressed }) => [styles.navRow, pressed && { opacity: 0.7 }]}>
       <Ionicons name="chevron-back" size={18} color={colors.textMuted} />
@@ -46,6 +52,8 @@ function NavRow({
 }
 
 export default function AdminOverviewScreen() {
+  const { colors } = useTheme();
+  const styles = makeStyles(colors);
   const queryClient = useQueryClient();
   const [refreshMsg, setRefreshMsg] = useState<string | null>(null);
 
@@ -129,7 +137,8 @@ export default function AdminOverviewScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (colors: AppColors) =>
+  StyleSheet.create({
   flex: { flex: 1, backgroundColor: colors.background },
   container: { padding: spacing.md, paddingBottom: spacing.xl * 2 },
   errorText: { color: colors.danger, textAlign: "right" },

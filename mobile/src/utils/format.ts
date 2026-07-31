@@ -20,12 +20,35 @@ export function formatTomanShort(value: number | null | undefined): string {
   return fmt(value);
 }
 
+// قیمت دلاری — با جداکننده‌ی انگلیسی چون نماد $ و عدد لاتین کنار هم طبیعی‌ترن
+export function formatUsd(value: number | null | undefined): string {
+  if (value === null || value === undefined || Number.isNaN(value)) return "—";
+  return new Intl.NumberFormat("en-US", {
+    maximumFractionDigits: value < 10 ? 4 : 0,
+  }).format(value);
+}
+
 export function toPersianDigits(input: string | number): string {
   const map: Record<string, string> = {
     "0": "۰", "1": "۱", "2": "۲", "3": "۳", "4": "۴",
     "5": "۵", "6": "۶", "7": "۷", "8": "۸", "9": "۹",
   };
   return String(input).replace(/[0-9]/g, (d) => map[d] ?? d);
+}
+
+// تاریخ و ساعت دقیق به شمسی — برای وقتی که «۳ ساعت پیش» کافی نیست
+export function formatDateTime(iso: string | null | undefined): string {
+  if (!iso) return "—";
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "—";
+  try {
+    return new Intl.DateTimeFormat("fa-IR", {
+      dateStyle: "short",
+      timeStyle: "short",
+    }).format(date);
+  } catch {
+    return date.toLocaleString();
+  }
 }
 
 export function formatRelativeTime(iso: string | null | undefined): string {

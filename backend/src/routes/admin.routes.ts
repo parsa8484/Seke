@@ -3,6 +3,7 @@ import { z } from "zod";
 import { prisma } from "../db";
 import { requireAuth, AuthedRequest } from "../middleware/auth";
 import { requireAdmin } from "../middleware/admin";
+import { hashPassword } from "../utils/password";
 import { refreshPrices } from "../services/priceService";
 import { config } from "../config";
 
@@ -59,6 +60,7 @@ adminRouter.get("/users", async (_req, res) => {
     users: users.map((u) => ({
       id: u.id,
       email: u.email,
+      username: u.username,
       displayName: u.displayName,
       role: u.role,
       isActive: u.isActive,
@@ -89,6 +91,7 @@ adminRouter.get("/users/:id", async (req, res) => {
     user: {
       id: user.id,
       email: user.email,
+      username: user.username,
       displayName: user.displayName,
       role: user.role,
       isActive: user.isActive,
@@ -131,6 +134,49 @@ adminRouter.put("/users/:id", async (req: AuthedRequest, res) => {
       isActive: updated.isActive,
     },
   });
+});
+
+const resetPasswordSchema = z.object({
+  newPassword: z.string().min(6, "رمز جدید باید حداقل ۶ کاراکتر باشد"),
+});
+
+// ریست رمز عبور یک کاربر توسط ادمین — بدون نیاز به دانستن رمز فعلی.
+// برخلاف تغییر نقش، ادمین اجازه داره رمز خودش رو هم از اینجا عوض کنه.
+adminRouter.post("/users/:id/reset-password", async (req, res) => {
+  const parsed = resetPasswordSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: parsed.error.issues[0].message });
+  }
+
+  const existing = await prisma.user.findUnique({ where: { id: req.params.id } });
+  if (!existing) return res.status(404).json({ error: "کاربر پیدا نشد" });
+
+  await prisma.user.update({
+    where: { id: req.params.id },
+    data: { passwordHash: await hashPassword(parsed.data.newPassword) },
+  });
+
+  res.json({
+    ok: true,
+    message: `رمز عبور ${existing.username ?? existing.email} تغییر کرد`,
+  });
+});
+
+// تاریخچه‌ی ورود یک کاربر — برای بررسی فعالیت مشکوک توسط ادمین
+adminRouter.get("/users/:id/login-history", async (req, res) => {
+  const events = await prisma.loginEvent.findMany({
+    where: { userId: req.params.id },
+    orderBy: { createdAt: "desc" },
+    take: 50,
+    select: {
+      id: true,
+      success: true,
+      ipAddress: true,
+      userAgent: true,
+      createdAt: true,
+    },
+  });
+  res.json({ events });
 });
 
 adminRouter.delete("/users/:id", async (req: AuthedRequest, res) => {

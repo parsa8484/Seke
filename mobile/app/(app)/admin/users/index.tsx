@@ -6,10 +6,14 @@ import { Ionicons } from "@expo/vector-icons";
 import { AppText } from "../../../../src/components/AppText";
 import { fetchAdminUsers } from "../../../../src/api/admin";
 import { extractErrorMessage } from "../../../../src/api/client";
-import { colors, spacing, radius } from "../../../../src/theme/colors";
+import { spacing, radius } from "../../../../src/theme/colors";
+import { useTheme } from "../../../../src/context/ThemeContext";
+import type { AppColors } from "../../../../src/theme/colors";
 import { AdminUser } from "../../../../src/api/types";
 
 export default function AdminUsersScreen() {
+  const { colors } = useTheme();
+  const styles = makeStyles(colors);
   const { data, isLoading, isRefetching, refetch, error } = useQuery({
     queryKey: ["admin-users"],
     queryFn: fetchAdminUsers,
@@ -76,7 +80,8 @@ export default function AdminUsersScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (colors: AppColors) =>
+  StyleSheet.create({
   flex: { flex: 1, backgroundColor: colors.background },
   center: {
     flex: 1,

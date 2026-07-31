@@ -5,31 +5,35 @@ import {
   KeyboardAvoidingView,
   Platform,
   ScrollView,
+  Pressable,
 } from "react-native";
 import { Link, router } from "expo-router";
 import { AppText } from "../../src/components/AppText";
 import { TextField } from "../../src/components/TextField";
 import { PrimaryButton } from "../../src/components/PrimaryButton";
 import { useAuth } from "../../src/context/AuthContext";
+import { useTheme } from "../../src/context/ThemeContext";
 import { extractErrorMessage } from "../../src/api/client";
-import { colors, spacing } from "../../src/theme/colors";
+import { spacing, radius } from "../../src/theme/colors";
 
 export default function LoginScreen() {
   const { signIn } = useAuth();
-  const [email, setEmail] = useState("");
+  const { colors, isDark, toggle } = useTheme();
+  const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
   async function handleSubmit() {
     setError(null);
-    if (!email.trim() || !password) {
-      setError("ایمیل و رمز عبور را وارد کنید");
+    if (!identifier.trim() || !password) {
+      setError("ایمیل/نام کاربری و رمز عبور را وارد کنید");
       return;
     }
     setLoading(true);
     try {
-      await signIn(email.trim(), password);
+      await signIn(identifier.trim(), password);
       router.replace("/(app)");
     } catch (err) {
       setError(extractErrorMessage(err));
@@ -40,44 +44,75 @@ export default function LoginScreen() {
 
   return (
     <KeyboardAvoidingView
-      style={styles.flex}
+      style={[styles.flex, { backgroundColor: colors.background }]}
       behavior={Platform.OS === "ios" ? "padding" : undefined}
     >
       <ScrollView
         contentContainerStyle={styles.container}
         keyboardShouldPersistTaps="handled"
       >
+        <Pressable
+          onPress={toggle}
+          style={[
+            styles.themeToggle,
+            { borderColor: colors.border, backgroundColor: colors.surface },
+          ]}
+        >
+          <AppText style={styles.themeToggleIcon}>
+            {isDark ? "☀️" : "🌙"}
+          </AppText>
+        </Pressable>
+
         <View style={styles.header}>
-          <AppText style={styles.brand}>دارایی من</AppText>
-          <AppText style={styles.subtitle}>
-            ورود به حساب کاربری برای مشاهده‌ی ارزش لحظه‌ای دارایی‌هایتان
+          <AppText style={[styles.brand, { color: colors.gold }]}>
+            دارایار
+          </AppText>
+          <AppText style={[styles.subtitle, { color: colors.textSecondary }]}>
+            ارزش لحظه‌ای سکه، طلا و صندوق‌های شما — یک‌جا
           </AppText>
         </View>
 
         <TextField
-          label="ایمیل"
-          placeholder="example@email.com"
+          label="ایمیل یا نام کاربری"
+          placeholder="example@email.com یا username"
           autoCapitalize="none"
-          keyboardType="email-address"
-          value={email}
-          onChangeText={setEmail}
+          autoCorrect={false}
+          value={identifier}
+          onChangeText={setIdentifier}
         />
         <TextField
           label="رمز عبور"
           placeholder="••••••••"
-          secureTextEntry
+          secureTextEntry={!showPassword}
+          autoCapitalize="none"
           value={password}
           onChangeText={setPassword}
         />
+        <Pressable
+          onPress={() => setShowPassword((v) => !v)}
+          style={styles.showPasswordRow}
+        >
+          <AppText style={[styles.showPassword, { color: colors.textSecondary }]}>
+            {showPassword ? "پنهان کردن رمز" : "نمایش رمز"}
+          </AppText>
+        </Pressable>
 
-        {error ? <AppText style={styles.error}>{error}</AppText> : null}
+        {error ? (
+          <AppText style={[styles.error, { color: colors.danger }]}>
+            {error}
+          </AppText>
+        ) : null}
 
         <PrimaryButton title="ورود" onPress={handleSubmit} loading={loading} />
 
         <View style={styles.footer}>
-          <AppText style={styles.footerText}>حساب کاربری ندارید؟</AppText>
+          <AppText style={{ color: colors.textSecondary }}>
+            حساب کاربری ندارید؟
+          </AppText>
           <Link href="/(auth)/register" asChild>
-            <AppText style={styles.link}>ثبت‌نام کنید</AppText>
+            <AppText style={[styles.link, { color: colors.gold }]}>
+              ثبت‌نام کنید
+            </AppText>
           </Link>
         </View>
       </ScrollView>
@@ -86,22 +121,38 @@ export default function LoginScreen() {
 }
 
 const styles = StyleSheet.create({
-  flex: { flex: 1, backgroundColor: colors.background },
+  flex: { flex: 1 },
   container: {
     flexGrow: 1,
     justifyContent: "center",
     padding: spacing.lg,
   },
+  themeToggle: {
+    position: "absolute",
+    top: spacing.lg,
+    left: spacing.lg,
+    width: 42,
+    height: 42,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  themeToggleIcon: { fontSize: 18 },
   header: { marginBottom: spacing.xl, alignItems: "flex-end" },
-  brand: { fontSize: 30, fontWeight: "800", color: colors.gold },
+  brand: { fontSize: 34, fontWeight: "800" },
   subtitle: {
     fontSize: 14,
-    color: colors.textSecondary,
     marginTop: spacing.sm,
     textAlign: "right",
   },
+  showPasswordRow: {
+    alignSelf: "flex-end",
+    marginTop: -spacing.sm,
+    marginBottom: spacing.md,
+  },
+  showPassword: { fontSize: 12 },
   error: {
-    color: colors.danger,
     marginBottom: spacing.md,
     textAlign: "right",
   },
@@ -111,6 +162,5 @@ const styles = StyleSheet.create({
     marginTop: spacing.lg,
     gap: spacing.xs,
   },
-  footerText: { color: colors.textSecondary },
-  link: { color: colors.gold, fontWeight: "700" },
+  link: { fontWeight: "700" },
 });

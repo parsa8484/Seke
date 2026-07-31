@@ -5,6 +5,7 @@ import {
   AdminUserDetail,
   AdminAsset,
   AdminAssetInput,
+  LoginEvent,
 } from "./types";
 
 export async function fetchAdminStats() {
@@ -84,4 +85,20 @@ export async function setAdminAssetPrice(id: string, price: number) {
     { price }
   );
   return data.asset;
+}
+
+// ریست رمز عبور یک کاربر توسط ادمین (بدون نیاز به رمز فعلی)
+export async function resetUserPassword(id: string, newPassword: string) {
+  const { data } = await apiClient.post<{ ok: boolean; message: string }>(
+    `/api/admin/users/${id}/reset-password`,
+    { newPassword }
+  );
+  return data;
+}
+
+export async function fetchUserLoginHistory(id: string) {
+  const { data } = await apiClient.get<{ events: LoginEvent[] }>(
+    `/api/admin/users/${id}/login-history`
+  );
+  return data.events;
 }
