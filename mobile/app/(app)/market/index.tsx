@@ -7,7 +7,6 @@ import {
   TextInput,
   RefreshControl,
   ActivityIndicator,
-  ScrollView,
 } from "react-native";
 import { useQuery } from "@tanstack/react-query";
 import { router } from "expo-router";
@@ -261,11 +260,15 @@ export default function MarketScreen() {
         ) : null}
       </View>
 
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={styles.chips}
-      >
+      {/*
+        قبلاً این دو ردیف داخل ScrollView افقیِ row-reverse بودند — همان
+        باگی که در چیپ‌های صفحه‌ی هشدارها هم بود: اسکرول همیشه از x=0 شروع
+        می‌شود، ولی row-reverse آیتم اول را در انتهای محتوا (سمت راست)
+        می‌گذارد، پس دقیقاً همان آیتمی که باید بدون اسکرول دیده شود، بیرون
+        از دید می‌افتد. تعداد گزینه‌ها کم است، پس به‌جای اسکرول از چیدمانِ
+        چندسطری استفاده می‌شود.
+      */}
+      <View style={styles.chips}>
         {categories.map((c) => {
           const active = category === c.key;
           return (
@@ -293,13 +296,9 @@ export default function MarketScreen() {
             </Pressable>
           );
         })}
-      </ScrollView>
+      </View>
 
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={styles.sortRow}
-      >
+      <View style={styles.sortRow}>
         <AppText style={[styles.sortLabel, { color: colors.textMuted }]}>
           مرتب‌سازی:
         </AppText>
@@ -328,7 +327,7 @@ export default function MarketScreen() {
             </Pressable>
           );
         })}
-      </ScrollView>
+      </View>
 
       {error ? (
         <AppText style={[styles.errorText, { color: colors.danger }]}>
@@ -428,28 +427,30 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
     paddingTop: spacing.sm,
     flexDirection: "row-reverse",
+    flexWrap: "wrap",
+    gap: spacing.xs,
   },
   chip: {
     borderWidth: 1,
     borderRadius: radius.pill,
     paddingHorizontal: spacing.md,
     paddingVertical: 6,
-    marginLeft: spacing.xs,
   },
   chipText: { fontSize: 12, fontWeight: "600" },
   sortRow: {
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
     flexDirection: "row-reverse",
+    flexWrap: "wrap",
     alignItems: "center",
+    gap: spacing.xs,
   },
-  sortLabel: { fontSize: 11, marginLeft: spacing.xs },
+  sortLabel: { fontSize: 11 },
   sortChip: {
     borderWidth: 1,
     borderRadius: radius.sm,
     paddingHorizontal: spacing.sm + 2,
     paddingVertical: 5,
-    marginLeft: spacing.xs,
   },
   sortChipText: { fontSize: 11, fontWeight: "700" },
   listContent: { paddingBottom: spacing.xl },
