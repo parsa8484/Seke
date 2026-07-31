@@ -1,5 +1,5 @@
-import React from "react";
-import { View, StyleSheet, Pressable, ScrollView } from "react-native";
+import React, { useState } from "react";
+import { View, StyleSheet, Pressable, ScrollView, Switch } from "react-native";
 import { router } from "expo-router";
 import { AppText } from "../../src/components/AppText";
 import { Card } from "../../src/components/Card";
@@ -9,6 +9,7 @@ import {
   useTheme,
   ThemePreference,
 } from "../../src/context/ThemeContext";
+import { useLock } from "../../src/context/LockContext";
 import { spacing, radius } from "../../src/theme/colors";
 
 const THEME_OPTIONS: { value: ThemePreference; label: string; icon: string }[] = [
@@ -43,6 +44,24 @@ function SettingsLink({
 export default function SettingsScreen() {
   const { user, signOut } = useAuth();
   const { colors, preference, setPreference } = useTheme();
+  const { isEnabled, setEnabled, support, methodLabel } = useLock();
+  const [lockError, setLockError] = useState<string | null>(null);
+
+  async function handleToggleLock(next: boolean) {
+    setLockError(null);
+    if (support === "not-enrolled") {
+      setLockError(
+        `روی این گوشی هنوز ${methodLabel} ثبت نشده. اول از تنظیمات گوشی اضافه‌اش کنید.`
+      );
+      return;
+    }
+    if (support === "unsupported") {
+      setLockError("این گوشی از احراز هویت بیومتریک پشتیبانی نمی‌کند");
+      return;
+    }
+    const ok = await setEnabled(next);
+    if (!ok) setLockError("تأیید هویت انجام نشد، تنظیمات تغییر نکرد");
+  }
 
   async function handleLogout() {
     await signOut();
@@ -111,6 +130,37 @@ export default function SettingsScreen() {
           label="تاریخچه‌ی ورود"
           onPress={() => router.push("/(app)/security/login-history")}
         />
+        <SettingsLink
+          icon="🔔"
+          label="هشدارهای قیمت"
+          onPress={() => router.push("/(app)/alerts")}
+        />
+
+        <View style={styles.switchRow}>
+          <Switch
+            value={isEnabled}
+            onValueChange={handleToggleLock}
+            trackColor={{ true: colors.gold, false: colors.border }}
+            thumbColor={colors.surface}
+          />
+          <View style={styles.switchLabelBox}>
+            <AppText style={styles.linkLabel}>
+              🔐  قفل با {methodLabel}
+            </AppText>
+            <AppText style={[styles.switchHint, { color: colors.textMuted }]}>
+              {support === "available"
+                ? "هر بار باز شدن اپ، تأیید هویت لازم است"
+                : support === "not-enrolled"
+                ? `${methodLabel} روی گوشی ثبت نشده`
+                : "این گوشی پشتیبانی نمی‌کند"}
+            </AppText>
+          </View>
+        </View>
+        {lockError ? (
+          <AppText style={[styles.lockError, { color: colors.danger }]}>
+            {lockError}
+          </AppText>
+        ) : null}
       </Card>
 
       <Card style={styles.section}>
@@ -206,6 +256,16 @@ const styles = StyleSheet.create({
   },
   linkLabel: { fontSize: 14, flex: 1 },
   chevron: { fontSize: 22, paddingHorizontal: spacing.xs },
+  switchRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingVertical: spacing.sm + 2,
+    gap: spacing.sm,
+  },
+  switchLabelBox: { flex: 1, alignItems: "flex-end" },
+  switchHint: { fontSize: 11, marginTop: 2, textAlign: "right" },
+  lockError: { fontSize: 11, textAlign: "right", paddingBottom: spacing.sm },
   sectionTitle: {
     fontSize: 15,
     fontWeight: "700",

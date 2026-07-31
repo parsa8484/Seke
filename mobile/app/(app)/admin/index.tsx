@@ -88,8 +88,12 @@ export default function AdminOverviewScreen() {
               value={`${formatToman(data!.totalHoldingsValue)} ت`}
             />
             <StatBox
-              label="وضعیت BrsApi"
-              value={data!.brsapiConfigured ? "متصل" : "کلید ندارد"}
+              label="منبع قیمت (tgju)"
+              value={
+                data!.tgjuReachable
+                  ? `متصل · ${data!.tgjuSymbolCount} نماد`
+                  : "در دسترس نیست"
+              }
             />
           </View>
 

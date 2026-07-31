@@ -5,6 +5,8 @@ import { config } from "./config";
 import { authRouter } from "./routes/auth.routes";
 import { holdingsRouter } from "./routes/holdings.routes";
 import { pricesRouter } from "./routes/prices.routes";
+import { marketRouter } from "./routes/market.routes";
+import { alertsRouter } from "./routes/alerts.routes";
 import { adminRouter } from "./routes/admin.routes";
 import { startPriceRefreshLoop } from "./services/priceService";
 
@@ -30,6 +32,8 @@ app.get("/health", (_req, res) => res.json({ ok: true }));
 app.use("/api/auth", authLimiter, authRouter);
 app.use("/api/holdings", holdingsRouter);
 app.use("/api/prices", pricesRouter);
+app.use("/api/market", marketRouter);
+app.use("/api/alerts", alertsRouter);
 app.use("/api/admin", adminRouter);
 
 app.use((_req, res) => res.status(404).json({ error: "مسیر پیدا نشد" }));

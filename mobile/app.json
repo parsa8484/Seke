@@ -2,11 +2,11 @@
   "expo": {
     "name": "دارایار",
     "slug": "sekeh",
-    "version": "1.0.0",
+    "version": "1.1.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "sekeh",
-    "userInterfaceStyle": "dark",
+    "userInterfaceStyle": "automatic",
     "backgroundColor": "#0B0F17",
     "splash": {
       "image": "./assets/images/splash.png",
@@ -15,14 +15,40 @@
     },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "ir.sekeh.app"
+      "bundleIdentifier": "ir.sekeh.app",
+      "infoPlist": {
+        "NSFaceIDUsageDescription": "برای باز کردن امن برنامه و محافظت از اطلاعات دارایی‌های شما"
+      }
     },
     "android": {
       "package": "ir.sekeh.app",
+      "versionCode": 2,
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
         "backgroundColor": "#0B0F17"
-      }
+      },
+      "permissions": [
+        "android.permission.INTERNET",
+        "android.permission.ACCESS_NETWORK_STATE",
+        "android.permission.USE_BIOMETRIC",
+        "android.permission.USE_FINGERPRINT",
+        "android.permission.VIBRATE",
+        "android.permission.RECEIVE_BOOT_COMPLETED",
+        "android.permission.POST_NOTIFICATIONS"
+      ],
+      "blockedPermissions": [
+        "android.permission.RECORD_AUDIO",
+        "android.permission.CAMERA",
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.WRITE_EXTERNAL_STORAGE",
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.READ_MEDIA_IMAGES",
+        "android.permission.READ_MEDIA_VIDEO",
+        "android.permission.SYSTEM_ALERT_WINDOW",
+        "android.permission.READ_CONTACTS",
+        "android.permission.READ_PHONE_STATE"
+      ]
     },
     "web": {
       "bundler": "metro",
@@ -33,10 +59,26 @@
       "expo-router",
       "expo-secure-store",
       [
+        "expo-local-authentication",
+        {
+          "faceIDPermission": "برای باز کردن امن برنامه و محافظت از اطلاعات دارایی‌های شما"
+        }
+      ],
+      [
+        "expo-notifications",
+        {
+          "color": "#D4AF37"
+        }
+      ],
+      [
         "expo-build-properties",
         {
           "android": {
-            "usesCleartextTraffic": true
+            "usesCleartextTraffic": true,
+            "compileSdkVersion": 34,
+            "targetSdkVersion": 34,
+            "minSdkVersion": 24,
+            "enableProguardInReleaseBuilds": true
           }
         }
       ]

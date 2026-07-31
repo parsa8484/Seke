@@ -44,6 +44,15 @@ export default function AppLayout() {
         }}
       />
       <Tabs.Screen
+        name="market"
+        options={{
+          title: "قیمت‌ها",
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="trending-up" color={color} size={size} />
+          ),
+        }}
+      />
+      <Tabs.Screen
         name="admin"
         options={{
           title: "مدیریت",
@@ -64,6 +73,8 @@ export default function AppLayout() {
       />
       {/* زیرصفحه‌های امنیت از داخل تنظیمات باز می‌شن، نه از تب‌بار */}
       <Tabs.Screen name="security" options={{ href: null }} />
+      {/* هشدارها از داشبورد و تنظیمات باز می‌شه */}
+      <Tabs.Screen name="alerts" options={{ href: null }} />
     </Tabs>
   );
 }

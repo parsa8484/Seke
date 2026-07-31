@@ -25,6 +25,8 @@ model User {
 
   holdings    Holding[]
   loginEvents LoginEvent[]
+  priceAlerts PriceAlert[]
+  pushTokens  PushToken[]
 
   @@map("users")
 }
@@ -53,8 +55,11 @@ model Asset {
   category      String // "coin" | "fund" | "silver_fund" | "manual"
   label         String // نمایش فارسی: "سکه امامی (تمام)"
   unit          String    @default("عدد") // عدد | گرم | واحد
-  sourceType    String // "tgju" | "brsapi" | "manual"
-  sourceRef     String? // شناسه‌ی ردیف در منبع (مثل data-market-row یا symbol)
+  sourceType    String // "tgju" | "manual"  ("brsapi" منسوخ شده - از کار افتاد)
+  sourceRef     String? // نماد در ajax.json تی‌جی‌یو، مثل "retail_sekee" یا "ime_fund_kahroba"
+  // واحد عدد خامی که منبع می‌ده: "toman" (ریالی، تقسیم بر ۱۰) | "usd" | "point".
+  // خالی یعنی از کاتالوگ نماد حدس زده بشه (tgjuCatalog.unitForSymbol).
+  priceUnit     String?
   isActive      Boolean   @default(true)
   sortOrder     Int       @default(0)
   currentPrice  Float? // آخرین قیمت کش‌شده (تومان)
@@ -64,6 +69,7 @@ model Asset {
 
   holdings      Holding[]
   priceHistory  PriceHistory[]
+  priceAlerts   PriceAlert[]
 
   @@map("assets")
 }
@@ -74,6 +80,9 @@ model Holding {
   userId    String
   assetId   String
   quantity  Float    @default(0)
+  // میانگین قیمت خرید هر واحد به تومان. null یعنی کاربر ثبت نکرده و
+  // سود/زیان براش محاسبه نمی‌شه (صفر گذاشتن یعنی «رایگان گرفتم» که غلطه).
+  avgBuyPrice Float?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -95,4 +104,43 @@ model PriceHistory {
 
   @@index([assetId, recordedAt])
   @@map("price_history")
+}
+
+// هشدار قیمت: «وقتی سکه به X رسید خبرم کن»
+model PriceAlert {
+  id        String    @id @default(cuid())
+  userId    String
+  assetId   String
+  // "above" یعنی وقتی قیمت >= هدف شد، "below" یعنی وقتی <= هدف شد
+  direction String    @default("above")
+  // قیمت هدف به تومان
+  targetPrice Float
+  isActive  Boolean   @default(true)
+  // بعد از شلیک، غیرفعال می‌شه تا هر بار رفرش دوباره نوتیف نفرسته
+  triggeredAt DateTime?
+  triggeredPrice Float?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  asset Asset @relation(fields: [assetId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([assetId, isActive])
+  @@map("price_alerts")
+}
+
+// توکن پوش‌نوتیفیکیشن Expo هر دستگاه. یک کاربر می‌تونه چند دستگاه داشته باشه.
+model PushToken {
+  id        String   @id @default(cuid())
+  userId    String
+  token     String   @unique
+  platform  String? // "android" | "ios"
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("push_tokens")
 }

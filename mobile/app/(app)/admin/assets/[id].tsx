@@ -12,16 +12,27 @@ import {
   updateAdminAsset,
   deleteAdminAsset,
   setAdminAssetPrice,
+  fetchTgjuSymbols,
 } from "../../../../src/api/admin";
 import { extractErrorMessage } from "../../../../src/api/client";
 import { spacing, radius } from "../../../../src/theme/colors";
 import { useTheme } from "../../../../src/context/ThemeContext";
 import type { AppColors } from "../../../../src/theme/colors";
-import { AssetSourceType, AdminAsset } from "../../../../src/api/types";
+import {
+  AssetSourceType,
+  AdminAsset,
+  MarketUnit,
+  TgjuSymbolOption,
+} from "../../../../src/api/types";
+import { formatToman } from "../../../../src/utils/format";
 
+// BrsApi حذف شد — اندپوینتش از کار افتاد و همه‌ی قیمت‌ها از tgju می‌آید
 const SOURCE_OPTIONS: { value: AssetSourceType; label: string; hint: string }[] = [
-  { value: "tgju", label: "tgju", hint: "شناسه‌ی data-market-row در tgju.org" },
-  { value: "brsapi", label: "BrsApi", hint: "بخشی از نام فارسی نماد در BrsApi" },
+  {
+    value: "tgju",
+    label: "tgju",
+    hint: "نماد را از فهرست پایین انتخاب کنید تا قیمت خودکار به‌روز شود",
+  },
   { value: "manual", label: "دستی", hint: "قیمت رو خودت پایین‌تر وارد می‌کنی" },
 ];
 
@@ -46,8 +57,18 @@ export default function AdminAssetEditScreen() {
   const [unit, setUnit] = useState("عدد");
   const [sourceType, setSourceType] = useState<AssetSourceType>("manual");
   const [sourceRef, setSourceRef] = useState("");
+  const [priceUnit, setPriceUnit] = useState<MarketUnit | null>(null);
+  const [symbolSearch, setSymbolSearch] = useState("");
   const [priceInput, setPriceInput] = useState("");
   const [error, setError] = useState<string | null>(null);
+
+  // فهرست نمادهای tgju با قیمت لحظه‌ای — انتخاب از لیست خیلی امن‌تر از
+  // تایپ دستیه، چون نماد اشتباه یعنی قیمت غلطِ باورپذیر.
+  const { data: symbols } = useQuery({
+    queryKey: ["admin-tgju-symbols"],
+    queryFn: fetchTgjuSymbols,
+    staleTime: 5 * 60_000,
+  });
 
   useEffect(() => {
     if (existing) {
@@ -57,9 +78,18 @@ export default function AdminAssetEditScreen() {
       setUnit(existing.unit);
       setSourceType(existing.sourceType);
       setSourceRef(existing.sourceRef ?? "");
+      setPriceUnit(existing.priceUnit ?? null);
       setPriceInput(existing.currentPrice ? String(existing.currentPrice) : "");
     }
   }, [existing]);
+
+  const symbolMatches: TgjuSymbolOption[] = (symbols ?? [])
+    .filter((s: TgjuSymbolOption) => {
+      const q = symbolSearch.trim();
+      if (!q) return true;
+      return s.label.includes(q) || s.symbol.toLowerCase().includes(q.toLowerCase());
+    })
+    .slice(0, 40);
 
   function invalidateAll() {
     queryClient.invalidateQueries({ queryKey: ["admin-assets"] });
@@ -76,6 +106,7 @@ export default function AdminAssetEditScreen() {
         unit: unit.trim() || "عدد",
         sourceType,
         sourceRef: sourceRef.trim() || undefined,
+        priceUnit: sourceType === "tgju" ? priceUnit : null,
       };
       if (isNew) {
         return createAdminAsset(payload);
@@ -188,14 +219,86 @@ export default function AdminAssetEditScreen() {
         {SOURCE_OPTIONS.find((o) => o.value === sourceType)?.hint}
       </AppText>
 
-      {sourceType !== "manual" ? (
-        <TextField
-          label="Source Ref"
-          placeholder={sourceType === "tgju" ? "retail_sekee" : "کهربا"}
-          value={sourceRef}
-          onChangeText={setSourceRef}
-          autoCapitalize="none"
-        />
+      {sourceType === "tgju" ? (
+        <>
+          <TextField
+            label="نماد tgju (Source Ref)"
+            placeholder="retail_sekee"
+            value={sourceRef}
+            onChangeText={setSourceRef}
+            autoCapitalize="none"
+          />
+          <TextField
+            label="جستجوی نماد"
+            placeholder="سکه، دلار، کهربا، بیت‌کوین..."
+            value={symbolSearch}
+            onChangeText={setSymbolSearch}
+          />
+          <ScrollView style={styles.symbolList} nestedScrollEnabled>
+            {symbolMatches.map((s: TgjuSymbolOption) => {
+              const active = sourceRef === s.symbol;
+              return (
+                <Pressable
+                  key={s.symbol}
+                  onPress={() => {
+                    setSourceRef(s.symbol);
+                    setPriceUnit(s.unit);
+                    if (!label.trim()) setLabel(s.label);
+                  }}
+                  style={[
+                    styles.symbolRow,
+                    active && styles.symbolRowActive,
+                  ]}
+                >
+                  <View style={styles.symbolInfo}>
+                    <AppText style={styles.symbolLabel}>{s.label}</AppText>
+                    <AppText style={styles.symbolCode}>
+                      {s.symbol} · {s.categoryLabel}
+                    </AppText>
+                  </View>
+                  <AppText style={styles.symbolPrice}>
+                    {s.price === null
+                      ? "—"
+                      : s.unit === "usd"
+                      ? `$${s.price}`
+                      : formatToman(s.price)}
+                  </AppText>
+                </Pressable>
+              );
+            })}
+          </ScrollView>
+
+          {/* واحد عدد خام منبع. اشتباه بودنش بی‌صداست: عدد دلاری تقسیم بر ۱۰
+              هم باورپذیر به‌نظر می‌رسه. انتخاب از لیست بالا خودکار پرش می‌کنه. */}
+          <AppText style={styles.sectionLabel}>واحد قیمت منبع</AppText>
+          <View style={styles.sourceRow}>
+            {(
+              [
+                { value: "toman", label: "ریالی (÷۱۰)" },
+                { value: "usd", label: "دلاری" },
+                { value: "point", label: "شاخص" },
+              ] as const
+            ).map((opt) => (
+              <Pressable
+                key={opt.value}
+                onPress={() => setPriceUnit(opt.value)}
+                style={[
+                  styles.sourceOption,
+                  priceUnit === opt.value && styles.sourceOptionActive,
+                ]}
+              >
+                <AppText
+                  style={[
+                    styles.sourceOptionText,
+                    priceUnit === opt.value && styles.sourceOptionTextActive,
+                  ]}
+                >
+                  {opt.label}
+                </AppText>
+              </Pressable>
+            ))}
+          </View>
+        </>
       ) : null}
 
       {error ? <AppText style={styles.error}>{error}</AppText> : null}
@@ -272,6 +375,28 @@ const makeStyles = (colors: AppColors) =>
   sourceOptionActive: { borderColor: colors.gold, backgroundColor: colors.surfaceElevated },
   sourceOptionText: { fontSize: 13, color: colors.textSecondary },
   sourceOptionTextActive: { color: colors.gold, fontWeight: "700" },
+  symbolList: {
+    maxHeight: 220,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    marginBottom: spacing.sm,
+  },
+  symbolRow: {
+    flexDirection: "row-reverse",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.sm,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+    gap: spacing.sm,
+  },
+  symbolRowActive: { backgroundColor: colors.surfaceElevated },
+  symbolInfo: { flex: 1, alignItems: "flex-end" },
+  symbolLabel: { fontSize: 13, fontWeight: "600", color: colors.textPrimary },
+  symbolCode: { fontSize: 10, color: colors.textMuted, marginTop: 2 },
+  symbolPrice: { fontSize: 12, color: colors.goldSoft, fontWeight: "700" },
   hint: {
     fontSize: 11,
     color: colors.textMuted,

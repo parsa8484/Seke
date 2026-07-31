@@ -1,146 +1,92 @@
-import axios from "axios";
-import * as cheerio from "cheerio";
 import { prisma } from "../db";
 import { config } from "../config";
-
-const HEADERS = {
-  "User-Agent":
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36",
-  "Accept-Language": "fa-IR,fa;q=0.9,en-US;q=0.8",
-};
-
-// برای دارایی‌های sourceType="tgju": مقدار sourceRef همون data-market-row
-// صفحه‌ی tgju.org هست (مثلا "retail_sekee"). این تابع کاملاً داده‌محوره -
-// هر دارایی جدیدی که ادمین با sourceType=tgju اضافه کنه، خودکار پوشش داده می‌شه.
-async function fetchTgjuPrices(
-  assets: { key: string; sourceRef: string | null }[]
-): Promise<Record<string, number>> {
-  const result: Record<string, number> = {};
-  const targets = assets.filter((a) => a.sourceRef);
-  if (targets.length === 0) return result;
-
-  try {
-    const { data: html } = await axios.get("https://www.tgju.org/", {
-      headers: HEADERS,
-      timeout: 15000,
-    });
-    const $ = cheerio.load(html);
-
-    for (const asset of targets) {
-      // بعضی ردیف‌ها (مثل crypto-bitcoin) در صفحه دو بار میان: یک بار با قیمت
-      // دلاری و یک بار ریالی. برای همین sourceRef می‌تونه با "#شماره" بگه کدوم
-      // تکرار مدنظره — مثلا "crypto-bitcoin#1" یعنی دومین ردیف. بدون این پسوند
-      // اولین ردیف برداشته می‌شه (رفتار قبلی، برای بقیه‌ی دارایی‌ها درست).
-      const [rowId, indexPart] = (asset.sourceRef as string).split("#");
-      const wantedIndex = indexPart ? Number(indexPart) : 0;
-
-      const rows = $(`[data-market-row="${rowId}"]`);
-      const row = rows.eq(Number.isNaN(wantedIndex) ? 0 : wantedIndex);
-      if (!row.length) continue;
-
-      const priceText = row.find("td").eq(0).text().trim().replace(/,/g, "");
-      const rialPrice = Number(priceText);
-      if (!Number.isNaN(rialPrice) && rialPrice > 0) {
-        // tgju.org این ردیف‌ها را به ریال نمایش می‌دهد (تأیید شده روی HTML واقعی
-        // صفحه: data-market-name="p" با مقدار خام ریالی). کل سیستم ما تومان
-        // ذخیره می‌کند، پس تقسیم بر ۱۰ لازم است.
-        result[asset.key] = rialPrice / 10;
-      }
-    }
-  } catch (err) {
-    console.error("[priceService] tgju fetch failed:", (err as Error).message);
-  }
-  return result;
-}
-
-function extractPrice(item: any): number | null {
-  for (const key of ["pc", "pl", "price", "value", "nav", "final", "close"]) {
-    if (item?.[key] !== undefined && item[key] !== null) {
-      const n = Number(item[key]);
-      if (!Number.isNaN(n) && n > 0) return n;
-    }
-  }
-  return null;
-}
-
-// برای دارایی‌های sourceType="brsapi": مقدار sourceRef یک تکه از نام فارسی
-// نماد در BrsApi هست (مثلا "کهربا") که برای پیدا کردن ردیف مربوطه استفاده می‌شه.
-async function fetchBrsApiPrices(
-  assets: { key: string; sourceRef: string | null }[]
-): Promise<Record<string, number>> {
-  const result: Record<string, number> = {};
-  const targets = assets.filter((a) => a.sourceRef);
-  if (targets.length === 0) return result;
-
-  if (!config.brsapiKey) {
-    console.warn("[priceService] BRSAPI_KEY تنظیم نشده - قیمت صندوق‌ها رد شد");
-    return result;
-  }
-  try {
-    const { data } = await axios.get(
-      "https://BrsApi.ir/Api/Tsetmc/AllSymbols.php",
-      { params: { key: config.brsapiKey, type: 1 }, timeout: 15000 }
-    );
-
-    const list: any[] =
-      data?.gold ?? data?.data ?? data?.items ?? data?.result ?? data ?? [];
-
-    if (Array.isArray(list)) {
-      for (const item of list) {
-        const name: string = item?.l18 ?? item?.name ?? item?.symbol ?? "";
-        for (const asset of targets) {
-          if (asset.sourceRef && name.includes(asset.sourceRef)) {
-            const price = extractPrice(item);
-            if (price) result[asset.key] = price;
-          }
-        }
-      }
-    }
-  } catch (err) {
-    console.error(
-      "[priceService] BrsApi fetch failed:",
-      (err as Error).message
-    );
-  }
-  return result;
-}
+import { getMarketSnapshot } from "./tgjuClient";
+import { MarketUnit, toStoredPrice, unitForSymbol } from "./tgjuCatalog";
+import { evaluatePriceAlerts } from "./alertService";
 
 /**
- * قیمت‌های آنلاین دارایی‌های فعال را (بر اساس sourceType هرکدام) می‌گیرد،
- * در جدول Asset کش می‌کند و یک ردیف در PriceHistory برای هرکدام ثبت می‌کند.
+ * قیمت دارایی‌های فعالِ متصل به tgju را می‌گیرد، در Asset کش می‌کند و یک ردیف
+ * در PriceHistory ثبت می‌کند.
+ *
+ * از نسخه‌ی قبل دو تفاوت مهم دارد:
+ *  ۱) دیگر HTML صفحه‌ی tgju اسکرپ نمی‌شود؛ از ajax.json رسمی و رایگان می‌خوانیم.
+ *     پس هک `sourceRef = "crypto-bitcoin#1"` (تکرار n اُم ردیف) لازم نیست —
+ *     در ajax.json نسخه‌ی دلاری و ریالی کلید جدا دارند (crypto-bitcoin و
+ *     crypto-bitcoin-irr).
+ *  ۲) BrsApi حذف شده؛ صندوق‌های طلا هم از همین منبع (ime_fund_*) می‌آیند.
  */
-export async function refreshPrices(): Promise<{ updated: number }> {
+export async function refreshPrices(): Promise<{
+  updated: number;
+  skipped: number;
+  error?: string;
+}> {
   const assets = await prisma.asset.findMany({
-    where: { isActive: true, sourceType: { in: ["tgju", "brsapi"] } },
-    select: { id: true, key: true, sourceType: true, sourceRef: true },
+    where: { isActive: true, sourceType: "tgju" },
+    select: {
+      id: true,
+      key: true,
+      sourceRef: true,
+      priceUnit: true,
+      currentPrice: true,
+    },
   });
+  if (assets.length === 0) return { updated: 0, skipped: 0 };
 
-  const tgjuAssets = assets.filter((a) => a.sourceType === "tgju");
-  const brsapiAssets = assets.filter((a) => a.sourceType === "brsapi");
-
-  const [coinPrices, fundPrices] = await Promise.all([
-    fetchTgjuPrices(tgjuAssets),
-    fetchBrsApiPrices(brsapiAssets),
-  ]);
-  const allPrices: Record<string, number> = { ...coinPrices, ...fundPrices };
+  let quotes;
+  try {
+    quotes = await getMarketSnapshot(true);
+  } catch (err) {
+    const error = (err as Error).message;
+    console.error("[priceService] گرفتن قیمت از tgju ناموفق:", error);
+    return { updated: 0, skipped: assets.length, error };
+  }
 
   let updated = 0;
+  let skipped = 0;
+  const changed: { assetId: string; price: number }[] = [];
+
   for (const asset of assets) {
-    const price = allPrices[asset.key];
-    if (price === undefined) continue;
+    if (!asset.sourceRef) {
+      skipped++;
+      continue;
+    }
+    const quote = quotes.get(asset.sourceRef);
+    if (!quote) {
+      skipped++;
+      continue;
+    }
+
+    // اگر ادمین واحد را صریح تعیین کرده به آن احترام بگذار، وگرنه از کاتالوگ.
+    // (quote.price قبلاً با واحدِ کاتالوگ حساب شده، پس فقط وقتی ادمین چیز
+    // دیگری گفته دوباره از roh حساب می‌کنیم.)
+    const explicitUnit = (asset.priceUnit as MarketUnit | null) ?? null;
+    const price =
+      explicitUnit && explicitUnit !== unitForSymbol(asset.sourceRef)
+        ? toStoredPrice(quote.raw, explicitUnit)
+        : quote.price;
 
     await prisma.asset.update({
       where: { id: asset.id },
       data: { currentPrice: price, priceUpdatedAt: new Date() },
     });
-    await prisma.priceHistory.create({
-      data: { assetId: asset.id, price },
-    });
+    await prisma.priceHistory.create({ data: { assetId: asset.id, price } });
+    changed.push({ assetId: asset.id, price });
     updated++;
   }
 
-  console.log(`[priceService] قیمت ${updated} دارایی به‌روزرسانی شد`);
-  return { updated };
+  console.log(
+    `[priceService] قیمت ${updated} دارایی به‌روزرسانی شد (${skipped} بدون داده)`
+  );
+
+  // هشدارهای قیمت را بعد از به‌روزرسانی بررسی کن — خطای اینجا نباید
+  // به‌روزرسانی قیمت‌ها را خراب کند.
+  try {
+    await evaluatePriceAlerts(changed);
+  } catch (err) {
+    console.error("[priceService] بررسی هشدارها ناموفق:", (err as Error).message);
+  }
+
+  return { updated, skipped };
 }
 
 let refreshTimer: NodeJS.Timeout | null = null;

@@ -5,7 +5,8 @@ import { requireAuth, AuthedRequest } from "../middleware/auth";
 import { requireAdmin } from "../middleware/admin";
 import { hashPassword } from "../utils/password";
 import { refreshPrices } from "../services/priceService";
-import { config } from "../config";
+import { TGJU_CATALOG, MARKET_CATEGORY_LABELS } from "../services/tgjuCatalog";
+import { getMarketSnapshot } from "../services/tgjuClient";
 
 export const adminRouter = Router();
 adminRouter.use(requireAuth, requireAdmin);
@@ -30,13 +31,48 @@ adminRouter.get("/stats", async (_req, res) => {
     .filter((a) => a.isActive && a.sourceType !== "manual" && a.currentPrice === null)
     .map((a) => ({ key: a.key, label: a.label }));
 
+  // سلامت منبع قیمت: اگر ajax.json در دسترس نباشه اینجا false می‌شه
+  let tgjuReachable = false;
+  let tgjuSymbolCount = 0;
+  try {
+    const quotes = await getMarketSnapshot();
+    tgjuReachable = true;
+    tgjuSymbolCount = quotes.size;
+  } catch {
+    tgjuReachable = false;
+  }
+
   res.json({
     userCount,
     activeUserCount,
     holdingCount,
     totalHoldingsValue,
     assetsMissingPrice,
-    brsapiConfigured: Boolean(config.brsapiKey),
+    tgjuReachable,
+    tgjuSymbolCount,
+  });
+});
+
+// ------------------- فهرست نمادهای قابل‌انتخاب tgju -------------------
+// موقع ساخت/ویرایش دارایی، ادمین به‌جای تایپ دستی sourceRef از این لیست
+// انتخاب می‌کنه و قیمت لحظه‌ای هر نماد رو هم می‌بینه تا مطمئن بشه درسته.
+adminRouter.get("/tgju-symbols", async (_req, res) => {
+  let quotes: Awaited<ReturnType<typeof getMarketSnapshot>> | null = null;
+  try {
+    quotes = await getMarketSnapshot();
+  } catch {
+    quotes = null;
+  }
+
+  res.json({
+    symbols: TGJU_CATALOG.map((meta) => ({
+      symbol: meta.symbol,
+      label: meta.label,
+      category: meta.category,
+      categoryLabel: MARKET_CATEGORY_LABELS[meta.category],
+      unit: meta.unit,
+      price: quotes?.get(meta.symbol)?.price ?? null,
+    })),
   });
 });
 
@@ -208,8 +244,10 @@ const assetSchema = z.object({
   category: z.string().trim().min(2).max(30),
   label: z.string().trim().min(1).max(80),
   unit: z.string().trim().min(1).max(20).default("عدد"),
-  sourceType: z.enum(["tgju", "brsapi", "manual"]),
+  // brsapi حذف شد (اندپوینتش از کار افتاد) — همه‌ی منابع آنلاین حالا tgju هستن
+  sourceType: z.enum(["tgju", "manual"]),
   sourceRef: z.string().trim().max(80).optional().nullable(),
+  priceUnit: z.enum(["toman", "usd", "point"]).optional().nullable(),
   sortOrder: z.number().int().optional(),
 });
 

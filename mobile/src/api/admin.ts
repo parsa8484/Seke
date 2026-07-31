@@ -6,6 +6,7 @@ import {
   AdminAsset,
   AdminAssetInput,
   LoginEvent,
+  TgjuSymbolOption,
 } from "./types";
 
 export async function fetchAdminStats() {
@@ -101,4 +102,15 @@ export async function fetchUserLoginHistory(id: string) {
     `/api/admin/users/${id}/login-history`
   );
   return data.events;
+}
+
+/**
+ * فهرست نمادهای tgju همراه قیمت لحظه‌ای — برای انتخاب sourceRef در پنل ادمین
+ * به‌جای تایپ دستیِ خطاپذیر.
+ */
+export async function fetchTgjuSymbols() {
+  const { data } = await apiClient.get<{ symbols: TgjuSymbolOption[] }>(
+    "/api/admin/tgju-symbols"
+  );
+  return data.symbols;
 }

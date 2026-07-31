@@ -15,7 +15,8 @@ import { AdminAsset } from "../../../../src/api/types";
 
 const SOURCE_LABEL: Record<string, string> = {
   tgju: "tgju",
-  brsapi: "BrsApi",
+  // ردیف‌های قدیمیِ باقی‌مانده — دیگه قیمت نمی‌گیرن
+  brsapi: "BrsApi (منسوخ)",
   manual: "دستی",
 };
 

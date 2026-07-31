@@ -1,12 +1,26 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { View, StyleSheet, ScrollView, RefreshControl } from "react-native";
+import {
+  View,
+  StyleSheet,
+  ScrollView,
+  RefreshControl,
+  Modal,
+  Pressable,
+  ActivityIndicator,
+} from "react-native";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { router } from "expo-router";
 import { AppText } from "../../src/components/AppText";
 import { Card } from "../../src/components/Card";
 import { PrimaryButton } from "../../src/components/PrimaryButton";
 import { AssetRow } from "../../src/components/AssetRow";
 import { DonutChart, DonutSlice } from "../../src/components/DonutChart";
-import { fetchHoldingsSummary, saveHoldings } from "../../src/api/holdings";
+import { LineChart } from "../../src/components/LineChart";
+import {
+  fetchHoldingsSummary,
+  saveHoldings,
+  fetchAssetHistory,
+} from "../../src/api/holdings";
 import { extractErrorMessage } from "../../src/api/client";
 import { useTheme } from "../../src/context/ThemeContext";
 import { useAuth } from "../../src/context/AuthContext";
@@ -16,17 +30,20 @@ import {
   formatRelativeTime,
   formatDateTime,
   formatTomanShort,
+  formatPercent,
+  formatSignedToman,
 } from "../../src/utils/format";
 import { HoldingItem } from "../../src/api/types";
 
 const CATEGORY_LABELS: Record<string, string> = {
   coin: "سکه",
+  gold: "طلا و نقره",
   fund: "صندوق طلا",
   currency: "ارز",
   crypto: "رمزارز",
   manual: "سایر دارایی‌ها",
 };
-const CATEGORY_ORDER = ["coin", "fund", "currency", "crypto", "manual"];
+const CATEGORY_ORDER = ["coin", "gold", "fund", "currency", "crypto", "manual"];
 
 // نرخ دلار به تومان — برای نشون دادن معادل دلاری رمزارزها
 const USD_ASSET_KEY = "currency_usd";
@@ -38,11 +55,111 @@ function groupByCategory(items: HoldingItem[]) {
     list.push(item);
     groups.set(item.category, list);
   }
-  return CATEGORY_ORDER.filter((c) => groups.has(c)).map((c) => ({
+  // دسته‌های ناشناخته (که ادمین ساخته) هم باید دیده بشن، وگرنه بی‌صدا گم می‌شن
+  const known = CATEGORY_ORDER.filter((c) => groups.has(c));
+  const unknown = [...groups.keys()].filter((c) => !CATEGORY_ORDER.includes(c));
+  return [...known, ...unknown].map((c) => ({
     category: c,
     label: CATEGORY_LABELS[c] ?? c,
     items: groups.get(c)!,
   }));
+}
+
+/** پنجره‌ی نمودار روند یک دارایی */
+function TrendModal({
+  assetKey,
+  label,
+  onClose,
+}: {
+  assetKey: string | null;
+  label: string;
+  onClose: () => void;
+}) {
+  const { colors } = useTheme();
+  const [days, setDays] = useState(30);
+
+  const { data, isLoading, error } = useQuery({
+    queryKey: ["asset-history", assetKey, days],
+    queryFn: () => fetchAssetHistory(assetKey!, days),
+    enabled: Boolean(assetKey),
+    staleTime: 10 * 60_000,
+  });
+
+  return (
+    <Modal
+      visible={Boolean(assetKey)}
+      animationType="slide"
+      transparent
+      onRequestClose={onClose}
+    >
+      <Pressable
+        style={[styles.modalBackdrop, { backgroundColor: colors.overlay }]}
+        onPress={onClose}
+      >
+        <Pressable
+          style={[
+            styles.modalSheet,
+            { backgroundColor: colors.surface, borderColor: colors.border },
+          ]}
+          onPress={(e) => e.stopPropagation()}
+        >
+          <AppText style={[styles.modalTitle, { color: colors.textPrimary }]}>
+            روند قیمت {label}
+          </AppText>
+
+          <View style={styles.rangeRow}>
+            {[7, 30, 90, 365].map((d) => {
+              const active = days === d;
+              return (
+                <Pressable
+                  key={d}
+                  onPress={() => setDays(d)}
+                  style={[
+                    styles.rangeChip,
+                    {
+                      borderColor: active ? colors.gold : colors.border,
+                      backgroundColor: active
+                        ? colors.surfaceElevated
+                        : "transparent",
+                    },
+                  ]}
+                >
+                  <AppText
+                    style={[
+                      styles.rangeText,
+                      { color: active ? colors.gold : colors.textSecondary },
+                    ]}
+                  >
+                    {d === 7
+                      ? "۱ هفته"
+                      : d === 30
+                      ? "۱ ماه"
+                      : d === 90
+                      ? "۳ ماه"
+                      : "۱ سال"}
+                  </AppText>
+                </Pressable>
+              );
+            })}
+          </View>
+
+          {isLoading ? (
+            <View style={styles.modalLoading}>
+              <ActivityIndicator color={colors.gold} />
+            </View>
+          ) : error ? (
+            <AppText style={[styles.errorBanner, { color: colors.danger }]}>
+              {extractErrorMessage(error)}
+            </AppText>
+          ) : (
+            <LineChart points={data?.points ?? []} />
+          )}
+
+          <PrimaryButton title="بستن" onPress={onClose} variant="outline" />
+        </Pressable>
+      </Pressable>
+    </Modal>
+  );
 }
 
 export default function DashboardScreen() {
@@ -55,20 +172,27 @@ export default function DashboardScreen() {
   });
 
   const [quantities, setQuantities] = useState<Record<string, string>>({});
+  const [buyPrices, setBuyPrices] = useState<Record<string, string>>({});
   const dirtyRef = useRef(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [savedAt, setSavedAt] = useState<number | null>(null);
+  const [trendAsset, setTrendAsset] = useState<HoldingItem | null>(null);
 
   // وقتی داده‌ی سرور اومد، فرم رو با تعداد ذخیره‌شده‌ی قبلی کاربر پر کن -
   // ولی فقط اگه کاربر همین الان در حال ویرایش نیست (تا ادیت‌های نشسته پاک نشه)
   useEffect(() => {
     if (data && !dirtyRef.current) {
-      const initial: Record<string, string> = {};
+      const initialQty: Record<string, string> = {};
+      const initialBuy: Record<string, string> = {};
       for (const item of data.items) {
-        initial[item.assetKey] =
-          item.quantity > 0 ? String(item.quantity) : "";
+        initialQty[item.assetKey] = item.quantity > 0 ? String(item.quantity) : "";
+        initialBuy[item.assetKey] =
+          item.avgBuyPrice && item.avgBuyPrice > 0
+            ? String(item.avgBuyPrice)
+            : "";
       }
-      setQuantities(initial);
+      setQuantities(initialQty);
+      setBuyPrices(initialBuy);
     }
   }, [data]);
 
@@ -77,6 +201,10 @@ export default function DashboardScreen() {
       const items = Object.entries(quantities).map(([assetKey, qty]) => ({
         assetKey,
         quantity: Number(qty) || 0,
+        // رشته‌ی خالی → null یعنی «قیمت خرید ثبت نشده»، نه صفر
+        avgBuyPrice: buyPrices[assetKey]?.trim()
+          ? Number(buyPrices[assetKey]) || null
+          : null,
       }));
       return saveHoldings(items);
     },
@@ -91,16 +219,42 @@ export default function DashboardScreen() {
 
   function handleChangeQuantity(assetKey: string, value: string) {
     dirtyRef.current = true;
-    const sanitized = value.replace(/[^0-9.]/g, "");
-    setQuantities((prev) => ({ ...prev, [assetKey]: sanitized }));
+    setQuantities((prev) => ({ ...prev, [assetKey]: value.replace(/[^0-9.]/g, "") }));
+  }
+
+  function handleChangeBuyPrice(assetKey: string, value: string) {
+    dirtyRef.current = true;
+    setBuyPrices((prev) => ({ ...prev, [assetKey]: value.replace(/[^0-9.]/g, "") }));
   }
 
   const items: HoldingItem[] = data?.items ?? [];
 
-  const liveTotal = items.reduce((sum: number, item: HoldingItem) => {
-    const qty = Number(quantities[item.assetKey]) || 0;
-    return sum + qty * (item.price ?? 0);
-  }, 0);
+  // همه‌ی محاسبه‌ها روی مقادیر در حال ویرایش انجام می‌شه (نه مقادیر ذخیره‌شده)
+  // تا کاربر نتیجه رو قبل از زدن «ذخیره» ببینه.
+  const live = useMemo(() => {
+    let total = 0;
+    let cost = 0;
+    let valueWithCost = 0;
+
+    for (const item of items) {
+      const qty = Number(quantities[item.assetKey]) || 0;
+      const buy = Number(buyPrices[item.assetKey]) || 0;
+      const value = qty * (item.price ?? 0);
+      total += value;
+      if (qty > 0 && buy > 0 && item.price !== null) {
+        cost += buy * qty;
+        valueWithCost += value;
+      }
+    }
+
+    const profit = cost > 0 ? valueWithCost - cost : null;
+    return {
+      total,
+      cost: cost > 0 ? cost : null,
+      profit,
+      profitPercent: cost > 0 && profit !== null ? (profit / cost) * 100 : null,
+    };
+  }, [items, quantities, buyPrices]);
 
   // ترکیب دارایی‌ها برای نمودار — فقط آیتم‌هایی که واقعاً ارزش دارن
   const chartSlices: DonutSlice[] = useMemo(
@@ -128,6 +282,15 @@ export default function DashboardScreen() {
   const usdRate =
     items.find((i) => i.assetKey === USD_ASSET_KEY)?.price ?? null;
   const greeting = user?.displayName || user?.username || "خوش آمدید";
+
+  const profitColor =
+    live.profit === null
+      ? colors.textMuted
+      : live.profit > 0
+      ? colors.success
+      : live.profit < 0
+      ? colors.danger
+      : colors.textMuted;
 
   if (isLoading) {
     return (
@@ -166,14 +329,14 @@ export default function DashboardScreen() {
           ارزش نقدی لحظه‌ای دارایی‌ها
         </AppText>
         <AppText style={[styles.totalValue, { color: colors.gold }]}>
-          {formatToman(liveTotal)}{" "}
+          {formatToman(live.total)}{" "}
           <AppText style={[styles.totalUnit, { color: colors.gold }]}>
             تومان
           </AppText>
         </AppText>
-        {liveTotal > 0 ? (
+        {live.total > 0 ? (
           <AppText style={[styles.totalShort, { color: colors.textSecondary }]}>
-            ≈ {formatTomanShort(liveTotal)} تومان
+            ≈ {formatTomanShort(live.total)} تومان
           </AppText>
         ) : null}
 
@@ -186,6 +349,34 @@ export default function DashboardScreen() {
           </AppText>
         </View>
       </View>
+
+      {/* سود/زیان کل — فقط وقتی حداقل یک قیمت خرید ثبت شده باشه */}
+      {live.profit !== null ? (
+        <Card style={styles.profitCard}>
+          <AppText style={[styles.profitTitle, { color: colors.textSecondary }]}>
+            سود / زیان کل
+          </AppText>
+          <AppText style={[styles.profitValue, { color: profitColor }]}>
+            {formatSignedToman(live.profit)} تومان
+          </AppText>
+          <AppText style={[styles.profitPercent, { color: profitColor }]}>
+            {formatPercent(live.profitPercent)} نسبت به بهای خرید
+          </AppText>
+          <AppText style={[styles.profitCost, { color: colors.textMuted }]}>
+            بهای خرید: {formatToman(live.cost)} تومان
+          </AppText>
+        </Card>
+      ) : (
+        <Card style={styles.profitCard}>
+          <AppText style={[styles.profitTitle, { color: colors.textSecondary }]}>
+            سود / زیان
+          </AppText>
+          <AppText style={[styles.profitHint, { color: colors.textMuted }]}>
+            برای دیدن سود یا زیان، زیر هر دارایی «قیمت خرید هر واحد» را وارد
+            کنید. بدون قیمت خرید نمی‌شود سود را حساب کرد.
+          </AppText>
+        </Card>
+      )}
 
       {error ? (
         <AppText style={[styles.errorBanner, { color: colors.danger }]}>
@@ -222,7 +413,10 @@ export default function DashboardScreen() {
               key={item.assetKey}
               item={item}
               quantity={quantities[item.assetKey] ?? ""}
+              buyPrice={buyPrices[item.assetKey] ?? ""}
               onChangeQuantity={handleChangeQuantity}
+              onChangeBuyPrice={handleChangeBuyPrice}
+              onPressChart={() => setTrendAsset(item)}
               usdRate={group.category === "crypto" ? usdRate : null}
             />
           ))}
@@ -246,6 +440,19 @@ export default function DashboardScreen() {
         onPress={() => saveMutation.mutate()}
         loading={saveMutation.isPending}
         style={styles.saveButton}
+      />
+
+      <PrimaryButton
+        title="🔔 هشدارهای قیمت"
+        onPress={() => router.push("/(app)/alerts")}
+        variant="outline"
+        style={styles.alertsButton}
+      />
+
+      <TrendModal
+        assetKey={trendAsset?.assetKey ?? null}
+        label={trendAsset?.label ?? ""}
+        onClose={() => setTrendAsset(null)}
       />
     </ScrollView>
   );
@@ -288,6 +495,12 @@ const styles = StyleSheet.create({
   },
   updateText: { fontSize: 12 },
   updateExact: { fontSize: 11, marginTop: 2 },
+  profitCard: { marginBottom: spacing.md, alignItems: "flex-end" },
+  profitTitle: { fontSize: 13 },
+  profitValue: { fontSize: 24, fontWeight: "800", marginTop: 2 },
+  profitPercent: { fontSize: 13, fontWeight: "600", marginTop: 2 },
+  profitCost: { fontSize: 11, marginTop: spacing.xs },
+  profitHint: { fontSize: 12, lineHeight: 20, textAlign: "right", marginTop: 4 },
   groupCard: { marginBottom: spacing.md },
   groupTitle: {
     fontSize: 16,
@@ -299,6 +512,7 @@ const styles = StyleSheet.create({
   emptyTitle: { fontSize: 15, fontWeight: "700" },
   emptyText: { fontSize: 13, lineHeight: 21, textAlign: "right" },
   saveButton: { marginTop: spacing.sm },
+  alertsButton: { marginTop: spacing.sm },
   errorBanner: {
     textAlign: "right",
     marginBottom: spacing.md,
@@ -308,4 +522,27 @@ const styles = StyleSheet.create({
     marginBottom: spacing.md,
     fontSize: 13,
   },
+  modalBackdrop: {
+    flex: 1,
+    justifyContent: "flex-end",
+  },
+  modalSheet: {
+    borderTopLeftRadius: radius.lg,
+    borderTopRightRadius: radius.lg,
+    borderWidth: 1,
+    padding: spacing.md,
+    paddingBottom: spacing.xl,
+    gap: spacing.sm,
+  },
+  modalTitle: { fontSize: 17, fontWeight: "700", textAlign: "right" },
+  modalLoading: { height: 180, alignItems: "center", justifyContent: "center" },
+  rangeRow: { flexDirection: "row-reverse", gap: spacing.xs },
+  rangeChip: {
+    flex: 1,
+    borderWidth: 1,
+    borderRadius: radius.pill,
+    paddingVertical: 6,
+    alignItems: "center",
+  },
+  rangeText: { fontSize: 12, fontWeight: "600" },
 });
