@@ -83,3 +83,28 @@ Server state (queries/mutations) goes through `@tanstack/react-query`; don't add
   - Use a distinct PM2 process name (e.g. `sekeh-api`) and confirm the port this backend binds to (default `4000`, from `.env`) doesn't collide with the other app's port before starting it — check with `pm2 list` first.
   - Before installing/upgrading Node.js or global npm packages (pm2 itself included), check what's already installed (`node -v`, `pm2 -v`) — the other project may depend on the existing versions.
 - Production APK for Cafebazaar: EAS Build, documented in `mobile/README.md`.
+
+## Live deployment (as of 2026-07-31)
+
+Backend runs on a Windows VPS at `188.209.153.164:4000` (plain HTTP, no domain/TLS), checked out at `C:\apps\Seke`, under PM2 as `sekeh-api`. Update procedure:
+
+```powershell
+cd C:\apps\Seke
+git checkout -- backend/package.json   # npm approve-scripts edits this; it blocks git pull
+git pull
+cd backend
+npm install
+npm run build
+npx prisma migrate deploy
+npx prisma db seed
+pm2 restart sekeh-api                   # never `pm2 restart all` — see PM2 note above
+```
+
+Two recurring snags on that box:
+- `npm approve-scripts` writes an `allowScripts` block into `backend/package.json`, which makes the next `git pull` abort. Discarding the local change (line 2 above) is safe — the already-installed `node_modules` keep working.
+- `npx prisma generate` can fail with `EPERM ... query_engine-windows.dll.node` because the running PM2 process holds the DLL open. It's harmless when the engine version is unchanged (the TS client still regenerates). If a schema change really doesn't take effect, `pm2 stop sekeh-api` → `npx prisma generate` → `pm2 start sekeh-api`.
+
+Because the API is plain HTTP, the Android app needs `usesCleartextTraffic` — configured via the `expo-build-properties` plugin in `mobile/app.json`. Don't remove it unless the server gets HTTPS.
+
+### OTA updates (expo-updates)
+`mobile/` has `expo-updates` wired to the `preview` channel, so **JS-only** changes ship with `npx eas-cli update --branch preview --message "..."` (~2 min) instead of a full build. A new native module (or any `app.json` native field such as `name`) still requires `eas build`. Critical: publishing an OTA that imports a native module absent from the installed binary will crash that install — ship the build first, or at the same time.
