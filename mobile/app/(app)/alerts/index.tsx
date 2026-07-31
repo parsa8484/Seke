@@ -27,7 +27,7 @@ import { AppColors, radius, spacing } from "../../../src/theme/colors";
 import {
   formatToman,
   formatJalaliDateTime,
-  toPersianDigits,
+  sanitizeNumericInput,
 } from "../../../src/utils/format";
 import {
   AlertDirection,
@@ -44,6 +44,7 @@ export default function AlertsScreen() {
   const [direction, setDirection] = useState<AlertDirection>("above");
   const [target, setTarget] = useState("");
   const [formError, setFormError] = useState<string | null>(null);
+  const [listError, setListError] = useState<string | null>(null);
   const [pushError, setPushError] = useState<string | null>(null);
 
   const { data: alerts, isLoading } = useQuery({
@@ -86,21 +87,40 @@ export default function AlertsScreen() {
     onError: (err) => setFormError(extractErrorMessage(err)),
   });
 
+  // خطای این دو تا قبلاً بی‌صدا بلعیده می‌شد: کاربر دکمه رو می‌زد و هیچ اتفاقی
+  // نمی‌افتاد بدون اینکه بفهمه چرا.
   const toggleMutation = useMutation({
     mutationFn: (alert: PriceAlert) =>
       updateAlert(alert.id, { isActive: !alert.isActive }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["alerts"] }),
+    onSuccess: () => {
+      setListError(null);
+      queryClient.invalidateQueries({ queryKey: ["alerts"] });
+    },
+    onError: (err) => setListError(extractErrorMessage(err)),
   });
 
   const deleteMutation = useMutation({
     mutationFn: (id: string) => deleteAlert(id),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["alerts"] }),
+    onSuccess: () => {
+      setListError(null);
+      queryClient.invalidateQueries({ queryKey: ["alerts"] });
+    },
+    onError: (err) => setListError(extractErrorMessage(err)),
   });
+
+  function handleSelectAsset(asset: HoldingItem) {
+    setAssetKey(asset.assetKey);
+    setFormError(null);
+    // قیمت فعلی را به‌عنوان نقطه‌ی شروع می‌گذاریم تا کاربر مجبور نباشد یک عدد
+    // ۹ رقمی را از صفر تایپ کند
+    if (!target && asset.price) setTarget(String(Math.round(asset.price)));
+  }
 
   function handleCreate() {
     if (!assetKey) return setFormError("اول دارایی را انتخاب کنید");
     const value = Number(target);
     if (!value || value <= 0) return setFormError("قیمت هدف را وارد کنید");
+    setFormError(null);
     createMutation.mutate();
   }
 
@@ -120,7 +140,14 @@ export default function AlertsScreen() {
       style={[styles.flex, { backgroundColor: colors.background }]}
       contentContainerStyle={styles.container}
     >
-      <Pressable onPress={() => router.back()} style={styles.backRow}>
+      <Pressable
+        onPress={() =>
+          // اگه این صفحه از روی نوتیفیکیشن مستقیم باز شده باشه، تاریخچه‌ای
+          // برای back وجود نداره و دکمه بی‌اثر می‌مونه
+          router.canGoBack() ? router.back() : router.replace("/(app)")
+        }
+        style={styles.backRow}
+      >
         <AppText style={[styles.back, { color: colors.gold }]}>بازگشت ›</AppText>
       </Pressable>
 
@@ -144,14 +171,21 @@ export default function AlertsScreen() {
         <AppText style={[styles.fieldLabel, { color: colors.textSecondary }]}>
           دارایی
         </AppText>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+        {/* قبلاً این لیست داخل یک ScrollView افقیِ row-reverse بود؛ اسکرول از
+            سمت اشتباه شروع می‌شد و عملاً به چند دارایی‌ی اول نمی‌شد رسید.
+            حالا همه‌ی گزینه‌ها در چند سطر و بدون اسکرول دیده می‌شن. */}
+        {assets.length === 0 ? (
+          <AppText style={[styles.empty, { color: colors.textMuted }]}>
+            هنوز قیمتی برای دارایی‌ها دریافت نشده
+          </AppText>
+        ) : (
           <View style={styles.assetChips}>
             {assets.map((a: HoldingItem) => {
               const active = assetKey === a.assetKey;
               return (
                 <Pressable
                   key={a.assetKey}
-                  onPress={() => setAssetKey(a.assetKey)}
+                  onPress={() => handleSelectAsset(a)}
                   style={[
                     styles.chip,
                     {
@@ -174,7 +208,7 @@ export default function AlertsScreen() {
               );
             })}
           </View>
-        </ScrollView>
+        )}
 
         {selected ? (
           <AppText style={[styles.currentPrice, { color: colors.textMuted }]}>
@@ -225,7 +259,7 @@ export default function AlertsScreen() {
         </AppText>
         <TextInput
           value={target}
-          onChangeText={(v) => setTarget(v.replace(/[^0-9.]/g, ""))}
+          onChangeText={(v) => setTarget(sanitizeNumericInput(v))}
           keyboardType="decimal-pad"
           placeholder="مثلاً ۲۰۰۰۰۰۰۰۰"
           placeholderTextColor={colors.textMuted}
@@ -233,7 +267,7 @@ export default function AlertsScreen() {
         />
         {target ? (
           <AppText style={[styles.preview, { color: colors.textMuted }]}>
-            یعنی {toPersianDigits(formatToman(Number(target)))} تومان
+            یعنی {formatToman(Number(target))} تومان
           </AppText>
         ) : null}
 
@@ -256,6 +290,12 @@ export default function AlertsScreen() {
         <AppText style={[styles.sectionTitle, { color: colors.goldSoft }]}>
           هشدارهای شما
         </AppText>
+
+        {listError ? (
+          <AppText style={[styles.warning, { color: colors.danger }]}>
+            {listError}
+          </AppText>
+        ) : null}
 
         {isLoading ? (
           <ActivityIndicator color={colors.gold} />
@@ -374,13 +414,16 @@ const styles = StyleSheet.create({
     marginTop: spacing.sm,
     marginBottom: spacing.xs,
   },
-  assetChips: { flexDirection: "row-reverse", gap: spacing.xs },
+  assetChips: {
+    flexDirection: "row-reverse",
+    flexWrap: "wrap",
+    gap: spacing.xs,
+  },
   chip: {
     borderWidth: 1,
     borderRadius: radius.pill,
     paddingHorizontal: spacing.md,
     paddingVertical: 6,
-    marginLeft: spacing.xs,
   },
   chipText: { fontSize: 12, fontWeight: "600" },
   currentPrice: { fontSize: 11, textAlign: "right", marginTop: spacing.xs },

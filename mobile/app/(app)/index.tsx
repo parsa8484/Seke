@@ -32,6 +32,7 @@ import {
   formatTomanShort,
   formatPercent,
   formatSignedToman,
+  sanitizeNumericInput,
 } from "../../src/utils/format";
 import { HoldingItem } from "../../src/api/types";
 
@@ -217,14 +218,16 @@ export default function DashboardScreen() {
     onError: (err) => setSaveError(extractErrorMessage(err)),
   });
 
+  // ورودی از راه sanitizeNumericInput رد می‌شه چون صفحه‌کلید فارسی ارقام
+  // فارسی می‌فرسته و فیلتر ساده‌ی [^0-9.] همه‌شون رو پاک می‌کرد.
   function handleChangeQuantity(assetKey: string, value: string) {
     dirtyRef.current = true;
-    setQuantities((prev) => ({ ...prev, [assetKey]: value.replace(/[^0-9.]/g, "") }));
+    setQuantities((prev) => ({ ...prev, [assetKey]: sanitizeNumericInput(value) }));
   }
 
   function handleChangeBuyPrice(assetKey: string, value: string) {
     dirtyRef.current = true;
-    setBuyPrices((prev) => ({ ...prev, [assetKey]: value.replace(/[^0-9.]/g, "") }));
+    setBuyPrices((prev) => ({ ...prev, [assetKey]: sanitizeNumericInput(value) }));
   }
 
   const items: HoldingItem[] = data?.items ?? [];
@@ -345,7 +348,7 @@ export default function DashboardScreen() {
             🕒 آخرین به‌روزرسانی قیمت: {formatRelativeTime(lastUpdate)}
           </AppText>
           <AppText style={[styles.updateExact, { color: colors.textMuted }]}>
-            {formatDateTime(lastUpdate)}
+            {formatDateTime(lastUpdate)} · منبع قیمت‌ها: tgju.org
           </AppText>
         </View>
       </View>

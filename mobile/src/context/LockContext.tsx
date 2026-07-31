@@ -35,6 +35,11 @@ interface LockContextValue {
   setEnabled: (enabled: boolean) => Promise<boolean>;
   /** درخواست احراز هویت — true یعنی باز شد */
   unlock: () => Promise<boolean>;
+  /**
+   * فقط اثر انگشت/چهره را می‌پرسد و نتیجه را برمی‌گرداند، بدون دست‌زدن به
+   * وضعیت قفل. برای «ورود با اثر انگشت» در صفحه‌ی لاگین استفاده می‌شود.
+   */
+  authenticate: (reason?: string) => Promise<boolean>;
 }
 
 const LockContext = createContext<LockContextValue | undefined>(undefined);
@@ -111,39 +116,47 @@ export function LockProvider({ children }: { children: React.ReactNode }) {
     return () => sub.remove();
   }, []);
 
-  const unlock = useCallback(async () => {
-    const result = await LocalAuthentication.authenticateAsync({
-      promptMessage: "برای باز کردن «دارایار» هویت خود را تأیید کنید",
-      cancelLabel: "انصراف",
-      // اگر بیومتریک چند بار شکست خورد، رمز/الگوی خود گوشی جایگزین بشه —
-      // وگرنه کاربر با انگشت زخمی از اپش قفل می‌مونه.
-      disableDeviceFallback: false,
-    });
-    if (result.success) {
-      setIsLocked(false);
-      return true;
+  const authenticate = useCallback(async (reason?: string) => {
+    try {
+      const result = await LocalAuthentication.authenticateAsync({
+        promptMessage: reason ?? "هویت خود را تأیید کنید",
+        cancelLabel: "انصراف",
+        // اگر بیومتریک چند بار شکست خورد، رمز/الگوی خود گوشی جایگزین بشه —
+        // وگرنه کاربر با انگشت زخمی از اپش قفل می‌مونه.
+        disableDeviceFallback: false,
+      });
+      return result.success;
+    } catch {
+      // روی بعضی دستگاه‌ها اگر همزمان دو درخواست باز باشه پرتاب می‌کنه؛
+      // کرش‌کردن اپ به‌خاطرش بی‌معنیه.
+      return false;
     }
-    return false;
   }, []);
+
+  const unlock = useCallback(async () => {
+    const ok = await authenticate(
+      "برای باز کردن «دارایار» هویت خود را تأیید کنید"
+    );
+    if (ok) setIsLocked(false);
+    return ok;
+  }, [authenticate]);
 
   const setEnabled = useCallback(
     async (enabled: boolean) => {
       if (enabled) {
         // روشن کردن قفل فقط بعد از یک احراز هویت موفق — تا کسی که گوشی باز
         // را در دست دارد نتواند قفلی بگذارد که صاحب گوشی نتواند بازش کند.
-        const result = await LocalAuthentication.authenticateAsync({
-          promptMessage: "برای فعال کردن قفل، هویت خود را تأیید کنید",
-          cancelLabel: "انصراف",
-          disableDeviceFallback: false,
-        });
-        if (!result.success) return false;
+        const ok = await authenticate(
+          "برای فعال کردن قفل، هویت خود را تأیید کنید"
+        );
+        if (!ok) return false;
       }
       await AsyncStorage.setItem(PREF_KEY, enabled ? "true" : "false");
       setIsEnabled(enabled);
       setIsLocked(false);
       return true;
     },
-    []
+    [authenticate]
   );
 
   const value = useMemo(
@@ -155,8 +168,18 @@ export function LockProvider({ children }: { children: React.ReactNode }) {
       methodLabel,
       setEnabled,
       unlock,
+      authenticate,
     }),
-    [isEnabled, isLocked, isLoading, support, methodLabel, setEnabled, unlock]
+    [
+      isEnabled,
+      isLocked,
+      isLoading,
+      support,
+      methodLabel,
+      setEnabled,
+      unlock,
+      authenticate,
+    ]
   );
 
   return <LockContext.Provider value={value}>{children}</LockContext.Provider>;

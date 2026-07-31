@@ -3,6 +3,10 @@ import React from "react";
 import { Slot } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import {
+  SafeAreaProvider,
+  SafeAreaView,
+} from "react-native-safe-area-context";
 import { AuthProvider } from "../src/context/AuthContext";
 import { ThemeProvider, useTheme } from "../src/context/ThemeContext";
 import { LockProvider, useLock } from "../src/context/LockContext";
@@ -24,7 +28,12 @@ function ThemedShell() {
   const { isLocked, isLoading } = useLock();
 
   return (
-    <View style={[styles.root, { backgroundColor: colors.background }]}>
+    // بدون این SafeAreaView، هدرِ صفحه‌ها می‌رفت زیر نوار وضعیت/ناچ گوشی.
+    // لبه‌ی پایین عمداً حذف شده چون تب‌بار خودش inset پایین را اعمال می‌کند.
+    <SafeAreaView
+      edges={["top", "left", "right"]}
+      style={[styles.root, { backgroundColor: colors.background }]}
+    >
       <StatusBar style={isDark ? "light" : "dark"} />
       {isLoading ? (
         <View style={styles.center}>
@@ -36,21 +45,23 @@ function ThemedShell() {
       ) : (
         <Slot />
       )}
-    </View>
+    </SafeAreaView>
   );
 }
 
 export default function RootLayout() {
   return (
-    <QueryClientProvider client={queryClient}>
-      <ThemeProvider>
-        <LockProvider>
-          <AuthProvider>
-            <ThemedShell />
-          </AuthProvider>
-        </LockProvider>
-      </ThemeProvider>
-    </QueryClientProvider>
+    <SafeAreaProvider>
+      <QueryClientProvider client={queryClient}>
+        <ThemeProvider>
+          <LockProvider>
+            <AuthProvider>
+              <ThemedShell />
+            </AuthProvider>
+          </LockProvider>
+        </ThemeProvider>
+      </QueryClientProvider>
+    </SafeAreaProvider>
   );
 }
 

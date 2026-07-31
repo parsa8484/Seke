@@ -24,6 +24,26 @@ export {
   formatTime,
 } from "./jalali";
 
+/**
+ * ارقام فارسی/عربی → لاتین.
+ * صفحه‌کلید فارسی روی decimal-pad ارقام فارسی می‌فرستد؛ بدون این تبدیل،
+ * فیلترِ `[^0-9.]` کل چیزی که کاربر تایپ کرده را پاک می‌کرد و فیلد خالی
+ * می‌ماند (باگ «هرچی می‌زنم ثبت نمی‌شه»).
+ */
+export function toLatinDigits(input: string): string {
+  return input
+    .replace(/[۰-۹]/g, (d) => String(d.charCodeAt(0) - 0x06f0))
+    .replace(/[٠-٩]/g, (d) => String(d.charCodeAt(0) - 0x0660))
+    .replace(/[،٫]/g, ".");
+}
+
+/** ورودی خام عددیِ کاربر → رشته‌ای که Number() بتواند بخواند (فقط یک نقطه) */
+export function sanitizeNumericInput(input: string): string {
+  const latin = toLatinDigits(input).replace(/[^0-9.]/g, "");
+  const [head, ...rest] = latin.split(".");
+  return rest.length > 0 ? `${head}.${rest.join("")}` : head;
+}
+
 /** جداکننده‌ی هزارگان دستی: 1234567 → "1,234,567" */
 function groupThousands(value: number, maxFractionDigits = 0): string {
   const fixed =

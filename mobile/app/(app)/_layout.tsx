@@ -34,21 +34,22 @@ export default function AppLayout() {
         },
       }}
     >
-      <Tabs.Screen
-        name="index"
-        options={{
-          title: "دارایی‌ها",
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="wallet" color={color} size={size} />
-          ),
-        }}
-      />
+      {/* ترتیب تب‌ها = ترتیب همین تعریف‌ها. «قیمت‌ها» عمداً اول است. */}
       <Tabs.Screen
         name="market"
         options={{
           title: "قیمت‌ها",
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="trending-up" color={color} size={size} />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="index"
+        options={{
+          title: "دارایی‌ها",
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="wallet" color={color} size={size} />
           ),
         }}
       />

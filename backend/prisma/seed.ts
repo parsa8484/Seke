@@ -33,6 +33,8 @@ const ASSETS: Array<{
   { key: "gold_mesghal", category: "gold", label: "مثقال طلا", unit: "مثقال", sourceType: "tgju", sourceRef: "mesghal", priceUnit: "toman", sortOrder: 8 },
   { key: "gold_melted", category: "gold", label: "طلای آب‌شده (نقدی)", unit: "مثقال", sourceType: "tgju", sourceRef: "gold_melted_wholesale", priceUnit: "toman", sortOrder: 9 },
   { key: "silver_999_gram", category: "gold", label: "نقره ۹۹۹ (گرم)", unit: "گرم", sourceType: "tgju", sourceRef: "silver_999", priceUnit: "toman", sortOrder: 10 },
+  // sortOrder فقط داخل هر دسته معنی دارد، پس هم‌عددی با صندوق‌ها مشکلی نیست
+  { key: "silver_925_gram", category: "gold", label: "نقره ۹۲۵ (گرم)", unit: "گرم", sourceType: "tgju", sourceRef: "silver_925", priceUnit: "toman", sortOrder: 11 },
 
   // ---------------------- صندوق‌های طلا و نقره ----------------------
   { key: "fund_kahroba", category: "fund", label: "صندوق طلای کهربا", unit: "واحد", sourceType: "tgju", sourceRef: "ime_fund_kahroba", priceUnit: "toman", sortOrder: 11 },
@@ -41,6 +43,8 @@ const ASSETS: Array<{
   { key: "fund_zar", category: "fund", label: "صندوق طلای زر", unit: "واحد", sourceType: "tgju", sourceRef: "ime_fund_zar", priceUnit: "toman", sortOrder: 14 },
   { key: "fund_mesghal", category: "fund", label: "صندوق طلای مثقال", unit: "واحد", sourceType: "tgju", sourceRef: "ime_fund_mesghal", priceUnit: "toman", sortOrder: 15 },
   { key: "fund_silver", category: "fund", label: "صندوق نقره سیم", unit: "واحد", sourceType: "tgju", sourceRef: "ime_fund_silver", priceUnit: "toman", sortOrder: 16 },
+  { key: "fund_simin", category: "fund", label: "صندوق نقره سیمین", unit: "واحد", sourceType: "tgju", sourceRef: "ime_fund_simin", priceUnit: "toman", sortOrder: 18 },
+  { key: "fund_noghran", category: "fund", label: "صندوق نقره نقران", unit: "واحد", sourceType: "tgju", sourceRef: "ime_fund_noghran", priceUnit: "toman", sortOrder: 19 },
 
   // «گنج» قبلاً دستی بود چون BrsApi نداشتش؛ tgju نماد ime_fund_ganj رو داره.
   // کلید عوض نمی‌شه تا تعداد ثبت‌شده‌ی کاربرها از دست نره.

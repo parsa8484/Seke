@@ -1,8 +1,9 @@
-import React from "react";
+import React, { useMemo } from "react";
 import { View, StyleSheet, TextInput, Pressable } from "react-native";
+import { Ionicons } from "@expo/vector-icons";
 import { AppText } from "./AppText";
 import { useTheme } from "../context/ThemeContext";
-import { radius, spacing } from "../theme/colors";
+import { AppColors, radius, spacing } from "../theme/colors";
 import {
   formatToman,
   formatTomanShort,
@@ -34,17 +35,19 @@ export function AssetRow({
   usdRate,
 }: Props) {
   const { colors } = useTheme();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const numericQty = Number(quantity) || 0;
   const numericBuy = Number(buyPrice) || 0;
   const value = numericQty * (item.price ?? 0);
   const hasPrice = item.price !== null && item.price !== undefined;
+  const owned = numericQty > 0;
 
   const usdPrice =
     hasPrice && usdRate && usdRate > 0 ? (item.price as number) / usdRate : null;
 
   // سود/زیان زنده حساب می‌شه (نه از سرور) تا همون لحظه‌ای که کاربر عدد رو
   // عوض می‌کنه نتیجه رو ببینه، بدون نیاز به ذخیره.
-  const showProfit = numericQty > 0 && numericBuy > 0 && hasPrice;
+  const showProfit = owned && numericBuy > 0 && hasPrice;
   const cost = numericBuy * numericQty;
   const profit = showProfit ? value - cost : null;
   const profitPercent = showProfit && cost > 0 ? (profit! / cost) * 100 : null;
@@ -58,20 +61,18 @@ export function AssetRow({
       : colors.textMuted;
 
   return (
-    <View style={[styles.wrapper, { borderBottomColor: colors.border }]}>
-      <View style={styles.row}>
-        <Pressable
-          style={styles.info}
-          onPress={() => onPressChart?.(item.assetKey)}
-        >
-          <View style={styles.labelRow}>
-            {onPressChart ? (
-              <AppText style={[styles.chartIcon, { color: colors.gold }]}>
-                📈
-              </AppText>
-            ) : null}
-            <AppText style={styles.label}>{item.label}</AppText>
-          </View>
+    <View
+      style={[
+        styles.wrapper,
+        owned && { borderColor: colors.gold, backgroundColor: colors.surfaceElevated },
+      ]}
+    >
+      {/* ---------------------------- سرِ ردیف ---------------------------- */}
+      <View style={styles.header}>
+        <View style={styles.titleBlock}>
+          <AppText style={styles.label} numberOfLines={1}>
+            {item.label}
+          </AppText>
           <AppText
             style={[
               styles.price,
@@ -79,48 +80,48 @@ export function AssetRow({
             ]}
           >
             {hasPrice
-              ? `${formatToman(item.price)} تومان`
+              ? `${formatToman(item.price)} تومان / ${item.unit}`
               : "قیمت هنوز دریافت نشده"}
-          </AppText>
-          {usdPrice !== null ? (
-            <AppText style={[styles.usdPrice, { color: colors.textMuted }]}>
-              ${formatUsd(usdPrice)}
-            </AppText>
-          ) : null}
-        </Pressable>
-
-        <TextInput
-          value={quantity}
-          onChangeText={(v) => onChangeQuantity(item.assetKey, v)}
-          keyboardType="decimal-pad"
-          placeholder="0"
-          placeholderTextColor={colors.textMuted}
-          style={[
-            styles.qtyInput,
-            {
-              backgroundColor: colors.surfaceElevated,
-              borderColor: numericQty > 0 ? colors.gold : colors.border,
-              color: colors.textPrimary,
-            },
-          ]}
-        />
-        <AppText style={[styles.unit, { color: colors.textMuted }]}>
-          {item.unit}
-        </AppText>
-
-        <View style={styles.valueBox}>
-          <AppText style={[styles.valueText, { color: colors.goldSoft }]}>
-            {value > 0 ? formatTomanShort(value) : "—"}
+            {usdPrice !== null ? `  ·  $${formatUsd(usdPrice)}` : ""}
           </AppText>
         </View>
+
+        {onPressChart ? (
+          <Pressable
+            onPress={() => onPressChart(item.assetKey)}
+            hitSlop={6}
+            style={({ pressed }) => [
+              styles.chartButton,
+              pressed && { backgroundColor: colors.gold },
+            ]}
+          >
+            <Ionicons name="stats-chart" size={15} color={colors.gold} />
+          </Pressable>
+        ) : null}
       </View>
 
-      {/* ردیف قیمت خرید فقط وقتی کاربر تعدادی وارد کرده معنی داره */}
-      {numericQty > 0 ? (
-        <View style={styles.buyRow}>
-          <AppText style={[styles.buyLabel, { color: colors.textMuted }]}>
-            قیمت خرید هر {item.unit}:
-          </AppText>
+      {/* ------------------------- فیلدهای ورودی -------------------------
+          هر دو فیلد همیشه رندر می‌شن و عرضشون برابره، تا ستون‌ها در همه‌ی
+          ردیف‌ها دقیقاً زیر هم بیفتن (قبلاً با نمایش شرطی، ردیف‌ها ناهم‌تراز
+          می‌شدن). */}
+      <View style={styles.fieldsRow}>
+        <View style={styles.field}>
+          <AppText style={styles.fieldLabel}>تعداد ({item.unit})</AppText>
+          <TextInput
+            value={quantity}
+            onChangeText={(v) => onChangeQuantity(item.assetKey, v)}
+            keyboardType="decimal-pad"
+            placeholder="۰"
+            placeholderTextColor={colors.textMuted}
+            style={[
+              styles.input,
+              { borderColor: owned ? colors.gold : colors.border },
+            ]}
+          />
+        </View>
+
+        <View style={styles.field}>
+          <AppText style={styles.fieldLabel}>قیمت خرید هر واحد</AppText>
           <TextInput
             value={buyPrice}
             onChangeText={(v) => onChangeBuyPrice(item.assetKey, v)}
@@ -128,73 +129,97 @@ export function AssetRow({
             placeholder="ثبت نشده"
             placeholderTextColor={colors.textMuted}
             style={[
-              styles.buyInput,
-              {
-                backgroundColor: colors.surfaceElevated,
-                borderColor: numericBuy > 0 ? colors.border : colors.border,
-                color: colors.textPrimary,
-              },
+              styles.input,
+              { borderColor: numericBuy > 0 ? colors.goldSoft : colors.border },
             ]}
           />
+        </View>
+      </View>
+
+      {/* -------------------------- ارزش و سود --------------------------- */}
+      <View style={styles.footer}>
+        <View style={styles.footerCell}>
+          <AppText style={styles.footerLabel}>ارزش</AppText>
+          <AppText
+            style={[
+              styles.footerValue,
+              { color: value > 0 ? colors.goldSoft : colors.textMuted },
+            ]}
+          >
+            {value > 0 ? `${formatTomanShort(value)} تومان` : "—"}
+          </AppText>
+        </View>
+
+        <View style={styles.footerCell}>
+          <AppText style={styles.footerLabel}>سود / زیان</AppText>
           {showProfit ? (
-            <AppText style={[styles.profitText, { color: profitColor }]}>
+            <AppText style={[styles.footerValue, { color: profitColor }]}>
               {formatSignedToman(profit)} ({formatPercent(profitPercent)})
             </AppText>
           ) : (
-            <AppText style={[styles.profitHint, { color: colors.textMuted }]}>
-              برای دیدن سود/زیان
+            <AppText style={[styles.footerValue, { color: colors.textMuted }]}>
+              —
             </AppText>
           )}
         </View>
-      ) : null}
+      </View>
     </View>
   );
 }
 
-const styles = StyleSheet.create({
-  wrapper: { borderBottomWidth: 1, paddingBottom: spacing.xs },
-  row: {
-    flexDirection: "row-reverse",
-    alignItems: "center",
-    paddingVertical: spacing.sm,
-    gap: spacing.sm,
-  },
-  info: { flex: 1 },
-  labelRow: {
-    flexDirection: "row-reverse",
-    alignItems: "center",
-    gap: 4,
-  },
-  label: { fontSize: 14, fontWeight: "600" },
-  chartIcon: { fontSize: 12 },
-  price: { fontSize: 12, marginTop: 2 },
-  usdPrice: { fontSize: 11, marginTop: 1 },
-  qtyInput: {
-    width: 64,
-    height: 40,
-    borderRadius: radius.sm,
-    borderWidth: 1,
-    textAlign: "center",
-    fontSize: 15,
-  },
-  unit: { width: 34, fontSize: 11, textAlign: "center" },
-  valueBox: { minWidth: 78, alignItems: "flex-end" },
-  valueText: { fontSize: 13, fontWeight: "700" },
-  buyRow: {
-    flexDirection: "row-reverse",
-    alignItems: "center",
-    gap: spacing.sm,
-    paddingBottom: spacing.xs,
-  },
-  buyLabel: { fontSize: 11 },
-  buyInput: {
-    width: 96,
-    height: 32,
-    borderRadius: radius.sm,
-    borderWidth: 1,
-    textAlign: "center",
-    fontSize: 12,
-  },
-  profitText: { flex: 1, fontSize: 11, fontWeight: "700", textAlign: "left" },
-  profitHint: { flex: 1, fontSize: 10, textAlign: "left" },
-});
+const makeStyles = (colors: AppColors) =>
+  StyleSheet.create({
+    wrapper: {
+      borderWidth: 1,
+      borderColor: colors.border,
+      borderRadius: radius.md,
+      padding: spacing.sm + 2,
+      marginBottom: spacing.sm,
+      gap: spacing.sm,
+    },
+    header: {
+      flexDirection: "row-reverse",
+      alignItems: "center",
+      gap: spacing.sm,
+    },
+    titleBlock: { flex: 1, alignItems: "flex-end" },
+    label: { fontSize: 14, fontWeight: "700", color: colors.textPrimary },
+    price: { fontSize: 11, marginTop: 3, textAlign: "right" },
+    chartButton: {
+      width: 32,
+      height: 32,
+      borderRadius: radius.sm,
+      borderWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: colors.surface,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    fieldsRow: { flexDirection: "row-reverse", gap: spacing.sm },
+    field: { flex: 1 },
+    fieldLabel: {
+      fontSize: 10,
+      color: colors.textMuted,
+      textAlign: "right",
+      marginBottom: 3,
+    },
+    input: {
+      height: 38,
+      borderRadius: radius.sm,
+      borderWidth: 1,
+      backgroundColor: colors.surface,
+      color: colors.textPrimary,
+      textAlign: "center",
+      fontSize: 14,
+      paddingHorizontal: spacing.xs,
+    },
+    footer: {
+      flexDirection: "row-reverse",
+      borderTopWidth: 1,
+      borderTopColor: colors.border,
+      paddingTop: spacing.xs + 2,
+    },
+    footerCell: { flex: 1, alignItems: "flex-end" },
+    footerLabel: { fontSize: 10, color: colors.textMuted },
+    footerValue: { fontSize: 12, fontWeight: "700", marginTop: 2 },
+  });

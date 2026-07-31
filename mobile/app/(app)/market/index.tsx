@@ -11,6 +11,7 @@ import {
 } from "react-native";
 import { useQuery } from "@tanstack/react-query";
 import { router } from "expo-router";
+import { Ionicons } from "@expo/vector-icons";
 import { AppText } from "../../../src/components/AppText";
 import { fetchMarket } from "../../../src/api/market";
 import { extractErrorMessage } from "../../../src/api/client";
@@ -26,25 +27,40 @@ import { MarketItem } from "../../../src/api/types";
 
 const ALL = "__all__";
 
+/** حالت‌های مرتب‌سازی. «دسته‌بندی» حالت پیش‌فرض است و لیست را تیتربندی می‌کند. */
+type SortMode = "category" | "gainers" | "losers" | "price" | "name";
+
+const SORT_OPTIONS: { key: SortMode; label: string }[] = [
+  { key: "category", label: "دسته‌بندی" },
+  { key: "gainers", label: "بیشترین رشد" },
+  { key: "losers", label: "بیشترین افت" },
+  { key: "price", label: "گران‌ترین" },
+  { key: "name", label: "الفبا" },
+];
+
 function priceText(item: MarketItem): string {
   if (item.unit === "usd") return `$${formatUsd(item.price)}`;
   if (item.unit === "point") return formatToman(item.price);
   return `${formatToman(item.price)} تومان`;
 }
 
-function MarketRow({
-  item,
-  colors,
-}: {
-  item: MarketItem;
-  colors: AppColors;
-}) {
-  // tgju جهت تغییر رو با dt می‌ده: "high" یعنی نسبت به قبل بالا رفته.
-  // وقتی خالیه (بازار بسته/بدون تغییر) از خود عدد تغییر استفاده می‌کنیم.
-  const up =
-    item.direction === "high" ||
-    (item.direction === "" && (item.changePercent ?? 0) > 0);
-  const flat = !item.changePercent;
+/**
+ * درصد تغییر با علامت درست.
+ * tgju جهت را در `dt` می‌دهد ("high"/"low") و `dp` را همیشه مثبت می‌فرستد،
+ * پس بدون این تابع، مرتب‌سازی «بیشترین رشد» ریزش‌ها را هم بالا می‌آورد.
+ */
+function signedChange(item: MarketItem): number {
+  const raw = Math.abs(item.changePercent ?? 0);
+  if (raw === 0) return 0;
+  if (item.direction === "low") return -raw;
+  if (item.direction === "high") return raw;
+  return item.changePercent ?? 0;
+}
+
+function MarketRow({ item, colors }: { item: MarketItem; colors: AppColors }) {
+  const change = signedChange(item);
+  const flat = change === 0;
+  const up = change > 0;
   const changeColor = flat
     ? colors.textMuted
     : up
@@ -68,7 +84,9 @@ function MarketRow({
       ]}
     >
       <View style={styles.rowInfo}>
-        <AppText style={styles.rowLabel}>{item.label}</AppText>
+        <AppText style={styles.rowLabel} numberOfLines={1}>
+          {item.label}
+        </AppText>
         <AppText style={[styles.rowSymbol, { color: colors.textMuted }]}>
           {item.symbol}
         </AppText>
@@ -78,19 +96,40 @@ function MarketRow({
         <AppText style={[styles.rowPrice, { color: colors.textPrimary }]}>
           {priceText(item)}
         </AppText>
-        <AppText style={[styles.rowChange, { color: changeColor }]}>
-          {flat ? "بدون تغییر" : `${up ? "▲" : "▼"} ${formatPercent(item.changePercent)}`}
-        </AppText>
+        <View
+          style={[
+            styles.changeBadge,
+            { backgroundColor: flat ? "transparent" : `${changeColor}22` },
+          ]}
+        >
+          {!flat ? (
+            <Ionicons
+              name={up ? "caret-up" : "caret-down"}
+              size={10}
+              color={changeColor}
+            />
+          ) : null}
+          <AppText style={[styles.rowChange, { color: changeColor }]}>
+            {flat ? "بدون تغییر" : formatPercent(change)}
+          </AppText>
+        </View>
       </View>
+
+      <Ionicons name="chevron-back" size={16} color={colors.textMuted} />
     </Pressable>
   );
 }
+
+type ListRow =
+  | { type: "header"; key: string; label: string; count: number }
+  | { type: "item"; key: string; item: MarketItem };
 
 export default function MarketScreen() {
   const { colors } = useTheme();
   const styles2 = useMemo(() => makeStyles(colors), [colors]);
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState<string>(ALL);
+  const [sort, setSort] = useState<SortMode>("category");
 
   const { data, isLoading, isRefetching, refetch, error } = useQuery({
     queryKey: ["market"],
@@ -100,18 +139,83 @@ export default function MarketScreen() {
     refetchInterval: 120_000,
   });
 
+  const categories: { key: string; label: string }[] = useMemo(
+    () => [{ key: ALL, label: "همه" }, ...(data?.categories ?? [])],
+    [data]
+  );
+
   const filtered = useMemo(() => {
     const items: MarketItem[] = data?.items ?? [];
-    const q = search.trim();
+    const q = search.trim().toLowerCase();
     return items.filter((item: MarketItem) => {
       if (category !== ALL && item.category !== category) return false;
       if (!q) return true;
       return (
-        item.label.includes(q) ||
-        item.symbol.toLowerCase().includes(q.toLowerCase())
+        item.label.toLowerCase().includes(q) ||
+        item.symbol.toLowerCase().includes(q)
       );
     });
   }, [data, search, category]);
+
+  // مرتب‌سازی و — در حالت «دسته‌بندی» — تیتربندی.
+  // قبلاً لیست دقیقاً به ترتیب خام کاتالوگ سرور می‌آمد و بی‌نظم دیده می‌شد.
+  const rows = useMemo<ListRow[]>(() => {
+    const sortWithin = (list: MarketItem[]) => {
+      const copy = list.slice();
+      switch (sort) {
+        case "gainers":
+          return copy.sort((a, b) => signedChange(b) - signedChange(a));
+        case "losers":
+          return copy.sort((a, b) => signedChange(a) - signedChange(b));
+        case "price":
+          return copy.sort((a, b) => (b.price ?? 0) - (a.price ?? 0));
+        case "name":
+          return copy.sort((a, b) => a.label.localeCompare(b.label, "fa"));
+        default:
+          // داخل هر دسته، گران‌ترین‌ها بالا — خواناتر از ترتیب خام کاتالوگ
+          return copy.sort((a, b) => (b.price ?? 0) - (a.price ?? 0));
+      }
+    };
+
+    if (sort !== "category") {
+      return sortWithin(filtered).map((item) => ({
+        type: "item" as const,
+        key: item.symbol,
+        item,
+      }));
+    }
+
+    const out: ListRow[] = [];
+    for (const cat of categories) {
+      if (cat.key === ALL) continue;
+      const group = filtered.filter((i) => i.category === cat.key);
+      if (group.length === 0) continue;
+      out.push({
+        type: "header",
+        key: `h_${cat.key}`,
+        label: cat.label,
+        count: group.length,
+      });
+      for (const item of sortWithin(group)) {
+        out.push({ type: "item", key: item.symbol, item });
+      }
+    }
+    // دسته‌هایی که سرور در فهرست دسته‌ها نداده (نماد جدید) هم نباید گم شوند
+    const known = new Set(categories.map((c) => c.key));
+    const orphans = filtered.filter((i) => !known.has(i.category));
+    if (orphans.length > 0) {
+      out.push({
+        type: "header",
+        key: "h_other",
+        label: "سایر",
+        count: orphans.length,
+      });
+      for (const item of sortWithin(orphans)) {
+        out.push({ type: "item", key: item.symbol, item });
+      }
+    }
+    return out;
+  }, [filtered, categories, sort]);
 
   const lastUpdate = useMemo(() => {
     const items: MarketItem[] = data?.items ?? [];
@@ -120,11 +224,6 @@ export default function MarketScreen() {
       .filter(Boolean) as string[];
     return times.sort().pop() ?? null;
   }, [data]);
-
-  const categories: { key: string; label: string }[] = [
-    { key: ALL, label: "همه" },
-    ...(data?.categories ?? []),
-  ];
 
   if (isLoading) {
     return (
@@ -146,13 +245,21 @@ export default function MarketScreen() {
         </AppText>
       </View>
 
-      <TextInput
-        value={search}
-        onChangeText={setSearch}
-        placeholder="جستجو: دلار، سکه، کهربا، بیت‌کوین..."
-        placeholderTextColor={colors.textMuted}
-        style={styles2.search}
-      />
+      <View style={styles2.searchWrap}>
+        <Ionicons name="search" size={16} color={colors.textMuted} />
+        <TextInput
+          value={search}
+          onChangeText={setSearch}
+          placeholder="جستجو: دلار، سکه، نقره، بیت‌کوین..."
+          placeholderTextColor={colors.textMuted}
+          style={styles2.search}
+        />
+        {search ? (
+          <Pressable onPress={() => setSearch("")} hitSlop={8}>
+            <Ionicons name="close-circle" size={16} color={colors.textMuted} />
+          </Pressable>
+        ) : null}
+      </View>
 
       <ScrollView
         horizontal
@@ -188,6 +295,41 @@ export default function MarketScreen() {
         })}
       </ScrollView>
 
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={styles.sortRow}
+      >
+        <AppText style={[styles.sortLabel, { color: colors.textMuted }]}>
+          مرتب‌سازی:
+        </AppText>
+        {SORT_OPTIONS.map((opt) => {
+          const active = sort === opt.key;
+          return (
+            <Pressable
+              key={opt.key}
+              onPress={() => setSort(opt.key)}
+              style={[
+                styles.sortChip,
+                {
+                  backgroundColor: active ? colors.gold : "transparent",
+                  borderColor: active ? colors.gold : colors.border,
+                },
+              ]}
+            >
+              <AppText
+                style={[
+                  styles.sortChipText,
+                  { color: active ? colors.background : colors.textSecondary },
+                ]}
+              >
+                {opt.label}
+              </AppText>
+            </Pressable>
+          );
+        })}
+      </ScrollView>
+
       {error ? (
         <AppText style={[styles.errorText, { color: colors.danger }]}>
           {extractErrorMessage(error)}
@@ -195,9 +337,34 @@ export default function MarketScreen() {
       ) : null}
 
       <FlatList
-        data={filtered}
-        keyExtractor={(item) => item.symbol}
-        renderItem={({ item }) => <MarketRow item={item} colors={colors} />}
+        data={rows}
+        keyExtractor={(row) => row.key}
+        renderItem={({ item: row }) =>
+          row.type === "header" ? (
+            <View
+              style={[
+                styles.sectionHeader,
+                {
+                  backgroundColor: colors.surface,
+                  borderBottomColor: colors.border,
+                },
+              ]}
+            >
+              <AppText
+                style={[styles.sectionTitle, { color: colors.goldSoft }]}
+              >
+                {row.label}
+              </AppText>
+              <AppText
+                style={[styles.sectionCount, { color: colors.textMuted }]}
+              >
+                {formatToman(row.count)} نماد
+              </AppText>
+            </View>
+          ) : (
+            <MarketRow item={row.item} colors={colors} />
+          )
+        }
         contentContainerStyle={styles.listContent}
         refreshControl={
           <RefreshControl
@@ -218,23 +385,36 @@ export default function MarketScreen() {
 
 const makeStyles = (colors: AppColors) =>
   StyleSheet.create({
-    search: {
+    searchWrap: {
+      flexDirection: "row-reverse",
+      alignItems: "center",
+      gap: spacing.sm,
       marginHorizontal: spacing.md,
       height: 42,
       borderRadius: radius.md,
       borderWidth: 1,
       borderColor: colors.border,
       backgroundColor: colors.surface,
-      color: colors.textPrimary,
       paddingHorizontal: spacing.md,
+    },
+    search: {
+      flex: 1,
+      height: "100%",
+      color: colors.textPrimary,
       textAlign: "right",
       fontSize: 14,
+      padding: 0,
     },
   });
 
 const styles = StyleSheet.create({
   flex: { flex: 1 },
-  center: { flex: 1, alignItems: "center", justifyContent: "center", gap: spacing.sm },
+  center: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: spacing.sm,
+  },
   centerText: { fontSize: 13 },
   headerBox: {
     paddingHorizontal: spacing.md,
@@ -246,8 +426,7 @@ const styles = StyleSheet.create({
   subtitle: { fontSize: 11, marginTop: 2 },
   chips: {
     paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    gap: spacing.xs,
+    paddingTop: spacing.sm,
     flexDirection: "row-reverse",
   },
   chip: {
@@ -258,7 +437,32 @@ const styles = StyleSheet.create({
     marginLeft: spacing.xs,
   },
   chipText: { fontSize: 12, fontWeight: "600" },
+  sortRow: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    flexDirection: "row-reverse",
+    alignItems: "center",
+  },
+  sortLabel: { fontSize: 11, marginLeft: spacing.xs },
+  sortChip: {
+    borderWidth: 1,
+    borderRadius: radius.sm,
+    paddingHorizontal: spacing.sm + 2,
+    paddingVertical: 5,
+    marginLeft: spacing.xs,
+  },
+  sortChipText: { fontSize: 11, fontWeight: "700" },
   listContent: { paddingBottom: spacing.xl },
+  sectionHeader: {
+    flexDirection: "row-reverse",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs + 2,
+    borderBottomWidth: 1,
+  },
+  sectionTitle: { fontSize: 13, fontWeight: "800" },
+  sectionCount: { fontSize: 10 },
   row: {
     flexDirection: "row-reverse",
     alignItems: "center",
@@ -270,9 +474,18 @@ const styles = StyleSheet.create({
   rowInfo: { flex: 1, alignItems: "flex-end" },
   rowLabel: { fontSize: 14, fontWeight: "600" },
   rowSymbol: { fontSize: 10, marginTop: 2 },
-  rowValues: { alignItems: "flex-start", minWidth: 120 },
+  rowValues: { alignItems: "flex-start", minWidth: 128 },
   rowPrice: { fontSize: 14, fontWeight: "700" },
-  rowChange: { fontSize: 11, marginTop: 2 },
+  changeBadge: {
+    flexDirection: "row-reverse",
+    alignItems: "center",
+    gap: 2,
+    borderRadius: radius.sm,
+    paddingHorizontal: 5,
+    paddingVertical: 1,
+    marginTop: 3,
+  },
+  rowChange: { fontSize: 11, fontWeight: "600" },
   errorText: {
     textAlign: "center",
     fontSize: 12,
