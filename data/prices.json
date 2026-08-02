@@ -1,5 +1,5 @@
 {
-  "updated_at": "2026-08-02T11:57:30.639256+03:30",
+  "updated_at": "2026-08-02T14:12:39.693696+03:30",
   "coins": {
     "emami": 189010.0,
     "nim": 95900.0,
@@ -28,7 +28,7 @@
     }
   },
   "status": {
-    "coins": "ok",
+    "coins": "error: خطای اتصال به tgju.org: 404 Client Error: Not Found for url: https://www.tgju.org/",
     "funds": "error: خطای اتصال: 404 Client Error: Not Found for url: https://brsapi.ir/Api/Tsetmc/AllSymbols.php?key=***&type=1"
   }
 }
