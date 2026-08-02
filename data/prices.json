@@ -1,9 +1,9 @@
 {
-  "updated_at": "2026-08-02T14:12:39.693696+03:30",
+  "updated_at": "2026-08-02T16:56:49.264492+03:30",
   "coins": {
-    "emami": 189010.0,
-    "nim": 95900.0,
-    "robe": 53800.0
+    "emami": 185000.0,
+    "nim": 94200.0,
+    "robe": 52600.0
   },
   "funds": {
     "kahroba": {
@@ -28,7 +28,7 @@
     }
   },
   "status": {
-    "coins": "error: خطای اتصال به tgju.org: 404 Client Error: Not Found for url: https://www.tgju.org/",
+    "coins": "ok",
     "funds": "error: خطای اتصال: 404 Client Error: Not Found for url: https://brsapi.ir/Api/Tsetmc/AllSymbols.php?key=***&type=1"
   }
 }
