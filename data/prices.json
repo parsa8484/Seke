@@ -1,7 +1,7 @@
 {
-  "updated_at": "2026-08-05T17:44:31.261923+03:30",
+  "updated_at": "2026-08-05T20:13:34.707233+03:30",
   "coins": {
-    "emami": 185040.0,
+    "emami": 185030.0,
     "nim": 94900.0,
     "robe": 52800.0
   },
@@ -29,6 +29,6 @@
   },
   "status": {
     "coins": "ok",
-    "funds": "error: خطای اتصال: 404 Client Error: Not Found for url: https://brsapi.ir/Api/Tsetmc/AllSymbols.php?key=***&type=1"
+    "funds": "error: خطای اتصال: HTTPSConnectionPool(host='brsapi.ir', port=443): Max retries exceeded with url: /Api/Tsetmc/AllSymbols.php?key=***&type=1 (Caused by ConnectTimeoutError(<HTTPSConnection(host='brsapi.ir', port=443) at 0x7f39e6f1a2d0>, 'Connection to brsapi.ir timed out. (connect timeout=20)'))"
   }
 }
