@@ -1,5 +1,5 @@
 {
-  "updated_at": "2026-08-19T04:52:24.832256+03:30",
+  "updated_at": "2026-08-19T07:18:40.955397+03:30",
   "coins": {
     "emami": 193040.0,
     "nim": 97400.0,
@@ -28,7 +28,7 @@
     }
   },
   "status": {
-    "coins": "error: ردیف(های) retail_sekee, retail_nim, retail_rob پیدا نشد (ساختار سایت شاید تغییر کرده)",
+    "coins": "ok",
     "funds": "error: خطای اتصال: 404 Client Error: Not Found for url: https://brsapi.ir/Api/Tsetmc/AllSymbols.php?key=***&type=1"
   }
 }
