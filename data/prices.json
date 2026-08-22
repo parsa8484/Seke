@@ -1,9 +1,9 @@
 {
-  "updated_at": "2026-08-22T12:58:58.492122+03:30",
+  "updated_at": "2026-08-22T16:12:54.551255+03:30",
   "coins": {
-    "emami": 206020.0,
-    "nim": 104400.0,
-    "robe": 57800.0
+    "emami": 210040.0,
+    "nim": 106900.0,
+    "robe": 58300.0
   },
   "funds": {
     "kahroba": {
@@ -29,6 +29,6 @@
   },
   "status": {
     "coins": "ok",
-    "funds": "error: خطای اتصال: 403 Client Error: Forbidden for url: https://brsapi.ir/Api/Tsetmc/AllSymbols.php?key=***&type=1"
+    "funds": "error: خطای اتصال: 404 Client Error: Not Found for url: https://brsapi.ir/Api/Tsetmc/AllSymbols.php?key=***&type=1"
   }
 }
