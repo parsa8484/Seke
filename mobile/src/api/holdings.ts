@@ -1,5 +1,10 @@
 import { apiClient } from "./client";
-import { AssetHistory, HoldingInput, HoldingsSummary } from "./types";
+import {
+  AssetHistory,
+  HoldingInput,
+  HoldingsSummary,
+  PortfolioHistory,
+} from "./types";
 
 export async function fetchHoldingsSummary() {
   const { data } = await apiClient.get<HoldingsSummary>(
@@ -12,6 +17,15 @@ export async function saveHoldings(items: HoldingInput[]) {
   const { data } = await apiClient.put<{ ok: true }>("/api/holdings", {
     items,
   });
+  return data;
+}
+
+/** روند ارزش کل پرتفوی کاربر (پیش‌فرض ۳۰ روز) */
+export async function fetchPortfolioHistory(days = 30) {
+  const { data } = await apiClient.get<PortfolioHistory>(
+    "/api/holdings/history",
+    { params: { days } }
+  );
   return data;
 }
 

@@ -6,7 +6,7 @@ import { requireAdmin } from "../middleware/admin";
 import { hashPassword } from "../utils/password";
 import { refreshPrices } from "../services/priceService";
 import { TGJU_CATALOG, MARKET_CATEGORY_LABELS } from "../services/tgjuCatalog";
-import { getMarketSnapshot } from "../services/tgjuClient";
+import { getMarketSnapshot, getSourceHealth } from "../services/tgjuClient";
 
 export const adminRouter = Router();
 adminRouter.use(requireAuth, requireAdmin);
@@ -31,11 +31,14 @@ adminRouter.get("/stats", async (_req, res) => {
     .filter((a) => a.isActive && a.sourceType !== "manual" && a.currentPrice === null)
     .map((a) => ({ key: a.key, label: a.label }));
 
-  // سلامت منبع قیمت: اگر ajax.json در دسترس نباشه اینجا false می‌شه
+  // سلامت منبع قیمت: اگر همه‌ی منابع در دسترس نباشند اینجا false می‌شود
   let tgjuReachable = false;
   let tgjuSymbolCount = 0;
   try {
-    const quotes = await getMarketSnapshot();
+    const quotes = await getMarketSnapshot(
+      false,
+      assets.map((a) => a.sourceRef).filter((ref): ref is string => Boolean(ref))
+    );
     tgjuReachable = true;
     tgjuSymbolCount = quotes.size;
   } catch {
@@ -50,6 +53,8 @@ adminRouter.get("/stats", async (_req, res) => {
     assetsMissingPrice,
     tgjuReachable,
     tgjuSymbolCount,
+    // وضعیت تک‌تک منابع — تا وقتی اپ روی منبع یدک افتاده معلوم باشد
+    priceSources: getSourceHealth(),
   });
 });
 

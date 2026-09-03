@@ -11,7 +11,12 @@ import { extractErrorMessage } from "../../../src/api/client";
 import { spacing, radius } from "../../../src/theme/colors";
 import { useTheme } from "../../../src/context/ThemeContext";
 import type { AppColors } from "../../../src/theme/colors";
-import { formatToman } from "../../../src/utils/format";
+import {
+  formatToman,
+  formatRelativeTime,
+  toPersianDigits,
+} from "../../../src/utils/format";
+import type { PriceSourcesHealth } from "../../../src/api/types";
 
 function StatBox({ label, value }: { label: string; value: string }) {
   const { colors } = useTheme();
@@ -48,6 +53,70 @@ function NavRow({
         <Ionicons name={icon} size={20} color={colors.gold} />
       </View>
     </Pressable>
+  );
+}
+
+/**
+ * وضعیت زنجیره‌ی منابع قیمت.
+ *
+ * مهم‌ترین چیزی که نشان می‌دهد این است که آیا اپ روی منبع یدک افتاده یا نه —
+ * قبلاً اگر منبع اصلی می‌مرد فقط قیمت‌های کهنه سرو می‌شد و هیچ‌جا معلوم نبود.
+ */
+function PriceSourcesCard({ health }: { health?: PriceSourcesHealth }) {
+  const { colors } = useTheme();
+  const styles = makeStyles(colors);
+  // سرور قدیمی‌تر (قبل از این قابلیت) این فیلد را ندارد
+  if (!health) return null;
+
+  const degraded =
+    health.activeSourceId !== null &&
+    health.activeSourceId !== health.primarySourceId;
+
+  return (
+    <Card
+      style={[styles.sourcesCard, degraded ? { borderColor: colors.danger } : null]}
+    >
+      <AppText style={styles.sourcesTitle}>منابع قیمت</AppText>
+      {degraded ? (
+        <AppText style={styles.sourcesWarning}>
+          منبع اصلی در دسترس نیست — قیمت‌ها از منبع یدک می‌آیند.
+        </AppText>
+      ) : null}
+
+      {health.providers.map((provider, index) => {
+        const statusColor =
+          provider.ok === false
+            ? colors.danger
+            : provider.ok
+            ? colors.success
+            : colors.textMuted;
+        const statusText =
+          provider.ok === null ? "امتحان نشده" : provider.ok ? "سالم" : "ناموفق";
+
+        return (
+          <View key={provider.id} style={styles.sourceRow}>
+            <View style={styles.sourceText}>
+              <AppText style={styles.sourceLabel}>
+                {index === 0 ? "اصلی" : `یدک ${toPersianDigits(index)}`} ·{" "}
+                {provider.label}
+                {provider.id === health.activeSourceId ? " (فعال)" : ""}
+              </AppText>
+              <AppText style={styles.sourceMeta}>
+                {statusText}
+                {provider.ok ? ` · ${toPersianDigits(provider.symbolCount)} نماد` : ""}
+                {provider.lastSuccessAt
+                  ? ` · آخرین موفقیت ${formatRelativeTime(provider.lastSuccessAt)}`
+                  : ""}
+              </AppText>
+              {provider.lastError ? (
+                <AppText style={styles.sourceError}>{provider.lastError}</AppText>
+              ) : null}
+            </View>
+            <View style={[styles.sourceDot, { backgroundColor: statusColor }]} />
+          </View>
+        );
+      })}
+    </Card>
   );
 }
 
@@ -88,7 +157,7 @@ export default function AdminOverviewScreen() {
               value={`${formatToman(data!.totalHoldingsValue)} ت`}
             />
             <StatBox
-              label="منبع قیمت (tgju)"
+              label="منبع قیمت"
               value={
                 data!.tgjuReachable
                   ? `متصل · ${data!.tgjuSymbolCount} نماد`
@@ -96,6 +165,8 @@ export default function AdminOverviewScreen() {
               }
             />
           </View>
+
+          <PriceSourcesCard health={data!.priceSources} />
 
           {data!.assetsMissingPrice.length > 0 ? (
             <Card style={styles.warningCard}>
@@ -163,6 +234,30 @@ const makeStyles = (colors: AppColors) =>
   },
   statValue: { fontSize: 18, fontWeight: "800", color: colors.gold },
   statLabel: { fontSize: 12, color: colors.textSecondary, marginTop: 4 },
+  sourcesCard: { marginBottom: spacing.md, alignItems: "stretch" },
+  sourcesTitle: {
+    fontWeight: "700",
+    color: colors.goldSoft,
+    textAlign: "right",
+    marginBottom: spacing.xs,
+  },
+  sourcesWarning: {
+    color: colors.danger,
+    fontSize: 12,
+    textAlign: "right",
+    marginBottom: spacing.xs,
+  },
+  sourceRow: {
+    flexDirection: "row-reverse",
+    alignItems: "center",
+    gap: spacing.sm,
+    paddingVertical: 6,
+  },
+  sourceDot: { width: 8, height: 8, borderRadius: 4 },
+  sourceText: { flex: 1, alignItems: "flex-end" },
+  sourceLabel: { fontSize: 13, fontWeight: "600" },
+  sourceMeta: { fontSize: 11, color: colors.textMuted, marginTop: 2 },
+  sourceError: { fontSize: 11, color: colors.danger, marginTop: 2 },
   warningCard: {
     borderColor: colors.danger,
     marginBottom: spacing.md,

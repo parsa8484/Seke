@@ -40,11 +40,24 @@ On this dev machine (~4GB RAM), Metro can OOM-crash with the default multi-worke
 
 ## Architecture
 
-### Price source: tgju `ajax.json` (single source, no API key)
+### Price sources: a provider chain, primary + two fallbacks (no API keys)
 
-**All** prices come from `https://call3.tgju.org/ajax.json` — a free, keyless endpoint returning ~930 symbols as `{ p, h, l, d, dp, dt, t, ts }`. `backend/src/services/tgjuClient.ts` owns fetching (60s in-memory cache, mirror fallback across `call1/2/3/4` + `www`, and it serves a stale snapshot rather than erroring if tgju is unreachable). HTML scraping with cheerio is gone.
+`backend/src/services/priceSources.ts` declares an ordered `PRICE_PROVIDERS` array; `tgjuClient.ts` is only the orchestrator (60s in-memory cache, request coalescing, health tracking, stale-snapshot fallback). Adding a source is appending one object implementing `PriceProvider`.
 
-Daily history comes from `https://api.tgju.org/v1/market/indicator/summary-table-data/{symbol}` — thousands of rows per symbol, **with the Jalali date already in column 7**, so trend charts work from day one instead of waiting for `PriceHistory` to accumulate. Cached 30 min.
+| # | id | what it covers | notes |
+|---|----|----------------|-------|
+| 1 | `tgju-ajax` | ~930 symbols, live | `https://call{1,2,3,4}.tgju.org/ajax.json` + `www` mirrors. The primary. |
+| 2 | `tgju-api` | any symbol, **last daily close** | `api.tgju.org/…/summary-table-data/{symbol}` — one request *per symbol*, so it's capped at 40 (priority symbols first, then whatever the caller asked for) with concurrency 5. Same company, different infrastructure: it survives `call*` being blocked or rate-limited. |
+| 3 | `milli-gold` | `geram18` only | `milli.gold/api/v1/public/milli-price/detail` — the only source with **no relation to tgju at all**. |
+
+Two behaviours worth knowing before touching this:
+
+- **Fallback quotes pass a deviation guard.** A non-primary quote more than 50% away from the last known price for that symbol is dropped (`rejectImplausible`). The threshold is deliberately loose: it exists to catch *unit* errors (which are off by 10× or 100×, i.e. 900%/9900%), not to second-guess real market moves. This is what makes `milli-gold` safe to use — its number is Toman per **0.01 gram**, and that ×100 factor was derived by comparing against tgju, not from documentation, so if it ever changes the guard rejects it instead of silently multiplying a user's portfolio by 100.
+- **A fallback merges over the previous snapshot rather than replacing it.** `tgju-api` returns ~11–40 symbols; the other ~920 are carried forward from the last good snapshot so the "قیمت‌ها" tab doesn't empty out. `getSourceHealth()` reports `freshCount` vs `totalCount` plus per-provider status, and the admin overview renders it — previously a dead primary just silently served stale prices with nothing indicating it.
+
+`refreshPrices()` and the market/admin routes pass the symbols *they* need down to `getMarketSnapshot(force, neededSymbols)`; without that list the per-symbol fallback has no way to know what matters for this install.
+
+Daily history lives in `backend/src/services/tgjuHistory.ts` (split out of `tgjuClient.ts` to avoid an import cycle, since `priceSources` needs it too). `fetchTgjuDailyRows` caches the **raw** rows for 30 min and each caller applies its own unit; `fetchTgjuHistory` is the unit-applied view. Thousands of rows per symbol, **with the Jalali date already in column 7**, so trend charts work from day one instead of waiting for `PriceHistory` to accumulate.
 
 BrsApi is **removed**. The gold funds it used to serve are tgju's `ime_fund_*` symbols (`ime_fund_kahroba`, `ime_fund_ayar`, `ime_fund_gohar`, `ime_fund_zar`, `ime_fund_mesghal`, `ime_fund_ganj`, plus silver funds). `prisma/seed.ts` migrates any leftover `sourceType: "brsapi"` row to `manual` so it surfaces in the admin panel as "missing price" rather than silently serving a stale number.
 
@@ -67,10 +80,25 @@ Every login attempt, successful or not, is written to `LoginEvent`. Recording is
 **Biometric quick-login.** Every successful login also writes the JWT to a second SecureStore key (`sekeh_biometric_token`) that `signOut` deliberately does *not* clear, so the login screen can offer "ورود با اثر انگشت". Consequences to keep in mind: the token stays on the device for up to its 30-day expiry after logout, and because `disableDeviceFallback: false`, the phone's own PIN/pattern also unlocks it — the same tradeoff banking apps make. Settings' logout asks whether to keep it, and `forgetDevice()` clears it. If a restored token is rejected by `/api/auth/me` (expired, or `isActive: false`), both keys are wiped and the user is sent back to password login.
 
 ### Backend request flow
-`src/index.ts` wires Express + routes. Routes: `auth.routes.ts` (register/login/me, change-password, profile PATCH, login-history), `prices.routes.ts` (public asset+price list, plus `GET /:key/history` for trend charts), `market.routes.ts` (public full tgju price list + `GET /history/:symbol`), `holdings.routes.ts` (authenticated per-user quantities *and buy prices*, bulk PUT), `alerts.routes.ts` (price-alert CRUD + Expo push-token registration), `admin.routes.ts` (stats, user CRUD, password reset, per-user login history, asset catalog CRUD, tgju symbol picker, manual price set, manual refresh trigger — all zod-validated, all behind `requireAdmin`). Self-modification (an admin changing their own role/isActive) is explicitly blocked in the admin routes — but an admin *may* reset any password including their own.
+`src/index.ts` wires Express + routes. Routes: `auth.routes.ts` (register/login/me, change-password, profile PATCH, login-history), `prices.routes.ts` (public asset+price list, plus `GET /:key/history` for trend charts), `market.routes.ts` (public full tgju price list + `GET /history/:symbol`), `holdings.routes.ts` (authenticated per-user quantities *and buy prices*, bulk PUT, plus `GET /history` for the portfolio-value chart), `alerts.routes.ts` (price-alert CRUD + Expo push-token registration), `admin.routes.ts` (stats, user CRUD, password reset, per-user login history, asset catalog CRUD, tgju symbol picker, manual price set, manual refresh trigger — all zod-validated, all behind `requireAdmin`). Self-modification (an admin changing their own role/isActive) is explicitly blocked in the admin routes — but an admin *may* reset any password including their own.
 
 ### Profit/loss
 `Holding.avgBuyPrice` is nullable on purpose: null means "not recorded" and the asset is excluded from profit math entirely. Storing 0 would mean "acquired for free" and would poison the totals, so the API and the app both coerce empty/zero input to null. The dashboard computes profit live from the in-progress form values (not the saved ones) so the user sees the result before pressing save; the server returns the same fields for the saved state.
+
+### Portfolio value over time (`GET /api/holdings/history`)
+
+There is **no snapshot table** and deliberately so. The endpoint multiplies the user's *current* quantities by each asset's *historical* daily close, reusing the same 30-min-cached tgju history the per-asset trend charts use. Semantics: "what would the holdings you have today have been worth back then" — not a real transaction ledger, because `Holding` stores a quantity, not a dated buy/sell history. The payoff is that a brand-new user gets a year of real curve immediately instead of waiting for a `PortfolioSnapshot` table to fill up, and it costs no migration (which matters given the `prisma generate` deploy footgun below).
+
+The time axis is the union of every asset's trading days (symbols have different holidays), capped at the requested range. Each asset carries its last known close forward across gaps and backfills before its first data point. Assets with no history at all — manual ones, or a fetch that failed — are held flat at `currentPrice` and reported in `missingHistory` so the app can tell the user the chart is partial rather than quietly drawing a wrong line. `Asset.priceUnit` overrides the catalog unit here exactly as it does in `priceService`.
+
+The chart reads *saved* holdings, so it's invalidated on save (`["portfolio-history"]`) and gated on `items.some(i => i.quantity > 0)` rather than on the in-progress form values.
+
+### CSV export
+
+Client-side only — no endpoint. `src/utils/csv.ts` builds the file from what's on screen (live form values, so it matches what the user is looking at) and `src/utils/exportFile.ts` writes it. Two non-obvious constraints:
+
+- **The file needs a UTF-8 BOM and Latin digits.** Without the BOM, Excel on Windows reads it in the system codepage and every Persian label turns to mojibake. And every number must bypass the app's usual Persian-digit formatting — Excel does not parse `۱۲۳` as a number, so the column silently becomes text and won't sum or sort.
+- **`expo-sharing` is deliberately not used.** It's a native module, so adding it would break OTA delivery for already-installed builds. `expo-file-system` was already in the binary (a transitive dependency of `expo`; now also declared explicitly in `package.json` at the same version, which installs nothing new), so Android's Storage Access Framework — user picks the folder, no storage permission needed, which matters because `app.json` blocks those permissions on purpose — works over the air. `Share.share({ message })` is the fallback for iOS and for devices where SAF fails.
 
 ### Price alerts & push
 `PriceAlert` rows are evaluated inside `refreshPrices()` (`services/alertService.ts`), only against assets whose price actually changed in that cycle. A fired alert is deactivated (`isActive: false` + `triggeredAt`/`triggeredPrice`) so it doesn't re-notify every 15 minutes; re-enabling it from the app clears the fired state. Push goes through Expo's free `exp.host` service using `PushToken` rows; `DeviceNotRegistered` tickets prune dead tokens. Alert evaluation is wrapped in try/catch — a push failure must never break the price refresh.
@@ -83,7 +111,8 @@ app/
   (app)/                  post-login tabs
     _layout.tsx            tab bar; order = order of the Tabs.Screen declarations (market first, then index);
                            admin tab conditionally shown via href: isAdmin ? undefined : null
-    index.tsx              holdings dashboard: donut chart, profit/loss, per-asset trend modal
+    index.tsx              holdings dashboard: donut chart, profit/loss, portfolio-value
+                           trend card, per-asset trend modal, CSV export button
     market/                "قیمت‌ها" tab — full tgju list
       index.tsx             searchable/filterable list, 5 sort modes, category section headers
       [symbol].tsx          detail: day high/low/change + line chart with range picker
@@ -106,6 +135,8 @@ src/
   services/notifications.ts permission + Expo push token registration
   components/              shared UI (PrimaryButton has a "danger" variant; DonutChart, LineChart, LockScreen)
   utils/jalali.ts          Gregorian→Jalali conversion + Persian formatting
+  utils/csv.ts             holdings → CSV (BOM + Latin digits, see "CSV export")
+  utils/exportFile.ts      saves a text file via Android SAF, Share.share fallback
   theme/colors.ts          dark + light palettes, spacing/radius/typography tokens, chart palette
 ```
 
@@ -118,7 +149,7 @@ Adding a route under `app/` requires Expo Router's generated types (`.expo/types
 
 ## Notes
 - `backend/.env` holds a real secret (`JWT_SECRET`) — gitignored, never commit it. `BRSAPI_KEY` is no longer used by the current app; the legacy root site still reads it.
-- **BrsApi was dropped on 2026-07-31.** `https://BrsApi.ir/Api/Tsetmc/AllSymbols.php` had started returning 404 from every network tried (the VPS, a dev machine, and the legacy site's GitHub Action) — the endpoint itself moved or was withdrawn. Rather than hunt for a replacement, gold funds moved to tgju's `ime_fund_*` symbols, so the app now has exactly one price source. Don't reintroduce a second one without a concrete reason.
+- **BrsApi was dropped on 2026-07-31.** `https://BrsApi.ir/Api/Tsetmc/AllSymbols.php` had started returning 404 from every network tried (the VPS, a dev machine, and the legacy site's GitHub Action) — the endpoint itself moved or was withdrawn. Rather than hunt for a replacement, gold funds moved to tgju's `ime_fund_*` symbols. Redundancy came back later as the `PRICE_PROVIDERS` chain described above rather than as a second *primary* — the lesson from BrsApi was that a single hard-coded endpoint is the fragile part, not that a second vendor is bad. Keep `tgju-ajax` first: the fallbacks are end-of-day or single-symbol and are not substitutes for it.
 - The legacy `scripts/fetch_prices.py` used to write the raw BrsApi URL — key included — into `data/prices.json` on error, which published the key to the public repo. That is redacted now (`redact_secrets`), but the key remains in git history, so it should be rotated at brsapi.ir.
 - **Android "unknown app / install anyway" warning.** Mitigated in `app.json` by declaring an explicit minimal `android.permissions` allowlist and `blockedPermissions` for the sensitive permissions Expo modules pull in by default (camera, mic, storage, location), plus `targetSdkVersion: 34`. A finance app requesting camera/mic is what makes Play Protect shout. `eas.json` now pins `buildType: "apk"` on `preview`/`production` so builds are signed with the stable EAS release keystore, and a `production-aab` profile exists for store submission. The residual one-time "install from unknown sources" prompt is inherent to sideloading and only disappears via Cafebazaar/Play distribution — don't chase it.
 - Deployment: `backend/DEPLOY.md` describes an Ubuntu/SSH flow, but the actual production VPS is **Windows Server** (accessed via RDP), so those steps don't apply as-is — treat DEPLOY.md as a reference for *what* needs to happen (Node install, build, migrate, run persistently, expose a port), not literal commands.

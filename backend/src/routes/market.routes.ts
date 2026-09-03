@@ -18,7 +18,12 @@ export const marketRouter = Router();
 // این چیزیه که تب «قیمت‌ها» توی اپ نشون می‌ده.
 marketRouter.get("/", async (_req, res) => {
   try {
-    const quotes = await getMarketSnapshot();
+    // لیست کاتالوگ را می‌دهیم تا اگر منبع اصلی قطع بود، منبع یدکِ نماد‌به‌نماد
+    // بداند سراغ کدام نمادها برود.
+    const quotes = await getMarketSnapshot(
+      false,
+      TGJU_CATALOG.map((meta) => meta.symbol)
+    );
 
     const items = TGJU_CATALOG.map((meta) => {
       const quote = quotes.get(meta.symbol);

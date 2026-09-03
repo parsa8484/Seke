@@ -2,6 +2,8 @@ import { Router } from "express";
 import { z } from "zod";
 import { prisma } from "../db";
 import { requireAuth, AuthedRequest } from "../middleware/auth";
+import { fetchTgjuDailyRows } from "../services/tgjuClient";
+import { MarketUnit, toStoredPrice, unitForSymbol } from "../services/tgjuCatalog";
 
 export const holdingsRouter = Router();
 holdingsRouter.use(requireAuth);
@@ -73,6 +75,109 @@ holdingsRouter.get("/summary", async (req: AuthedRequest, res) => {
     totalProfitPercent:
       totalCost > 0 && totalProfit !== null ? (totalProfit / totalCost) * 100 : null,
   });
+});
+
+const historyQuerySchema = z.object({
+  days: z.coerce.number().int().min(2).max(365).default(30),
+});
+
+/**
+ * روند ارزش کل پرتفوی برای نمودار.
+ *
+ * معنی دقیق عددها: «اگر همین تعداد دارایی که الان داری را در آن روز داشتی،
+ * چقدر می‌ارزید». چون جدول تراکنش (خرید/فروش با تاریخ) نداریم، تعداد فعلی در
+ * قیمت تاریخی هر روز ضرب می‌شود. مزیتش این است که کاربر از همان روز اول چند
+ * سال داده‌ی واقعی می‌بیند، به‌جای اینکه منتظر پر شدن یک جدول snapshot بماند.
+ *
+ * قیمت‌های روزانه از همان تاریخچه‌ی tgju می‌آید که نمودار تک‌دارایی استفاده
+ * می‌کند (کش ۳۰ دقیقه‌ای مشترک). دارایی‌هایی که تاریخچه ندارند (دستی یا خطای
+ * شبکه) با قیمت فعلی‌شان ثابت در نظر گرفته و در `missingHistory` گزارش می‌شوند
+ * تا اپ بتواند به کاربر بگوید نمودار کامل نیست.
+ */
+holdingsRouter.get("/history", async (req: AuthedRequest, res) => {
+  const parsed = historyQuerySchema.safeParse(req.query);
+  const days = parsed.success ? parsed.data.days : 30;
+  const userId = req.userId!;
+
+  const holdings = await prisma.holding.findMany({
+    where: { userId, quantity: { gt: 0 } },
+    include: { asset: true },
+  });
+
+  if (holdings.length === 0) {
+    return res.json({ days, points: [], assetCount: 0, missingHistory: [] });
+  }
+
+  // تاریخ شمسیِ آماده‌ی هر روز را از هر نمادی که داشته باشد برمی‌داریم تا
+  // اپ لازم نباشد دوباره میلادی→شمسی حساب کند.
+  const jdateByDate = new Map<string, string>();
+
+  const series = await Promise.all(
+    holdings.map(async (holding) => {
+      const { asset, quantity } = holding;
+      const base = {
+        label: asset.label,
+        quantity,
+        currentPrice: asset.currentPrice ?? 0,
+        dates: [] as string[],
+        prices: [] as number[],
+      };
+      if (asset.sourceType !== "tgju" || !asset.sourceRef) return base;
+
+      try {
+        // واحدِ صریحِ ادمین بر کاتالوگ اولویت دارد — دقیقاً مثل priceService
+        const unit =
+          (asset.priceUnit as MarketUnit | null) ?? unitForSymbol(asset.sourceRef);
+        const rows = await fetchTgjuDailyRows(asset.sourceRef);
+        const recent = rows.slice(0, days).reverse(); // قدیم → جدید
+        for (const row of recent) {
+          if (row.jdate) jdateByDate.set(row.date, row.jdate);
+        }
+        return {
+          ...base,
+          dates: recent.map((r) => r.date),
+          prices: recent.map((r) => toStoredPrice(r.close, unit)),
+        };
+      } catch {
+        return base;
+      }
+    })
+  );
+
+  const missingHistory = series.filter((s) => s.dates.length === 0).map((s) => s.label);
+
+  // محور زمان = اجتماع روزهای همه‌ی دارایی‌ها (هر نماد ممکن است روزهای
+  // تعطیل متفاوتی داشته باشد)، آخرین `days` روز.
+  const axis = [...new Set(series.flatMap((s) => s.dates))].sort().slice(-days);
+
+  if (axis.length < 2) {
+    return res.json({
+      days,
+      points: [],
+      assetCount: holdings.length,
+      missingHistory,
+    });
+  }
+
+  // برای هر دارایی یک اشاره‌گر نگه می‌داریم و همراه محور جلو می‌رود؛ اگر آن
+  // روز قیمتی ثبت نشده، آخرین قیمت شناخته‌شده ادامه پیدا می‌کند.
+  const cursors = series.map(() => 0);
+  const points = axis.map((date) => {
+    let value = 0;
+    series.forEach((s, i) => {
+      if (s.dates.length === 0) {
+        value += s.quantity * s.currentPrice;
+        return;
+      }
+      let index = cursors[i];
+      while (index + 1 < s.dates.length && s.dates[index + 1] <= date) index++;
+      cursors[i] = index;
+      value += s.quantity * s.prices[index];
+    });
+    return { date, jdate: jdateByDate.get(date) ?? null, price: value };
+  });
+
+  res.json({ days, points, assetCount: holdings.length, missingHistory });
 });
 
 const upsertSchema = z.object({

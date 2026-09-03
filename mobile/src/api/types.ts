@@ -53,6 +53,19 @@ export interface HoldingInput {
   avgBuyPrice?: number | null;
 }
 
+/**
+ * روند ارزش کل پرتفوی. `price` هر نقطه جمع ارزش همه‌ی دارایی‌ها در آن روز است
+ * (تعدادِ فعلی × قیمت تاریخی آن روز)، پس همان شکل HistoryPoint را دارد و
+ * مستقیم به LineChart داده می‌شود.
+ */
+export interface PortfolioHistory {
+  days: number;
+  points: HistoryPoint[];
+  assetCount: number;
+  /** دارایی‌هایی که تاریخچه نداشتند و با قیمت فعلی ثابت حساب شده‌اند */
+  missingHistory: string[];
+}
+
 // ----------------------------- بازار (tgju) -----------------------------
 
 export type MarketUnit = "toman" | "usd" | "point";
@@ -119,15 +132,37 @@ export interface PriceAlert {
 
 // ----------------------------- ادمین -----------------------------
 
+export interface PriceProviderHealth {
+  id: string;
+  label: string;
+  /** null یعنی هنوز امتحان نشده (منبع اصلی جواب داده و نوبت به این نرسیده) */
+  ok: boolean | null;
+  lastTriedAt: string | null;
+  lastSuccessAt: string | null;
+  lastError: string | null;
+  symbolCount: number;
+}
+
+export interface PriceSourcesHealth {
+  /** منبعی که داده‌ی فعلی از آن آمده */
+  activeSourceId: string | null;
+  primarySourceId: string;
+  fetchedAgoMs: number | null;
+  freshCount: number;
+  totalCount: number;
+  providers: PriceProviderHealth[];
+}
+
 export interface AdminStats {
   userCount: number;
   activeUserCount: number;
   holdingCount: number;
   totalHoldingsValue: number;
   assetsMissingPrice: { key: string; label: string }[];
-  /** آیا منبع قیمت (tgju) در دسترس است */
+  /** آیا حداقل یکی از منابع قیمت در دسترس است */
   tgjuReachable: boolean;
   tgjuSymbolCount: number;
+  priceSources: PriceSourcesHealth;
 }
 
 export interface TgjuSymbolOption {

@@ -32,12 +32,18 @@ export async function refreshPrices(): Promise<{
   });
   if (assets.length === 0) return { updated: 0, skipped: 0 };
 
+  // لیست نمادهای لازم را به لایه‌ی منابع می‌دهیم: منابع یدکی که باید نماد به
+  // نماد بگیرند بدون این لیست نمی‌دانند چه چیزی برای *این* نصب مهم است.
+  const neededSymbols = assets
+    .map((a) => a.sourceRef)
+    .filter((ref): ref is string => Boolean(ref));
+
   let quotes;
   try {
-    quotes = await getMarketSnapshot(true);
+    quotes = await getMarketSnapshot(true, neededSymbols);
   } catch (err) {
     const error = (err as Error).message;
-    console.error("[priceService] گرفتن قیمت از tgju ناموفق:", error);
+    console.error("[priceService] گرفتن قیمت از همه‌ی منابع ناموفق:", error);
     return { updated: 0, skipped: assets.length, error };
   }
 

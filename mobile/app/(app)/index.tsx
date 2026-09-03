@@ -7,6 +7,7 @@ import {
   Modal,
   Pressable,
   ActivityIndicator,
+  Alert,
 } from "react-native";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { router } from "expo-router";
@@ -20,7 +21,14 @@ import {
   fetchHoldingsSummary,
   saveHoldings,
   fetchAssetHistory,
+  fetchPortfolioHistory,
 } from "../../src/api/holdings";
+import {
+  buildHoldingsCsv,
+  holdingsCsvBaseName,
+  CsvHoldingRow,
+} from "../../src/utils/csv";
+import { saveTextFile } from "../../src/utils/exportFile";
 import { extractErrorMessage } from "../../src/api/client";
 import { useTheme } from "../../src/context/ThemeContext";
 import { useAuth } from "../../src/context/AuthContext";
@@ -66,6 +74,107 @@ function groupByCategory(items: HoldingItem[]) {
   }));
 }
 
+const RANGE_OPTIONS = [
+  { days: 7, label: "۱ هفته" },
+  { days: 30, label: "۱ ماه" },
+  { days: 90, label: "۳ ماه" },
+  { days: 365, label: "۱ سال" },
+];
+
+/** انتخاب بازه‌ی زمانی نمودار — هم برای روند یک دارایی، هم برای کل پرتفوی */
+function RangeChips({
+  value,
+  onChange,
+}: {
+  value: number;
+  onChange: (days: number) => void;
+}) {
+  const { colors } = useTheme();
+  return (
+    <View style={styles.rangeRow}>
+      {RANGE_OPTIONS.map((option) => {
+        const active = value === option.days;
+        return (
+          <Pressable
+            key={option.days}
+            onPress={() => onChange(option.days)}
+            style={[
+              styles.rangeChip,
+              {
+                borderColor: active ? colors.gold : colors.border,
+                backgroundColor: active ? colors.surfaceElevated : "transparent",
+              },
+            ]}
+          >
+            <AppText
+              style={[
+                styles.rangeText,
+                { color: active ? colors.gold : colors.textSecondary },
+              ]}
+            >
+              {option.label}
+            </AppText>
+          </Pressable>
+        );
+      })}
+    </View>
+  );
+}
+
+/**
+ * روند ارزش کل پرتفوی.
+ *
+ * عددها از دارایی‌های *ذخیره‌شده* روی سرور می‌آیند، نه از مقادیری که همین الان
+ * در فرم تایپ شده — پس بعد از «ذخیره و محاسبه» تازه می‌شود.
+ */
+function PortfolioTrendCard({ enabled }: { enabled: boolean }) {
+  const { colors } = useTheme();
+  const [days, setDays] = useState(30);
+
+  const { data, isLoading, error } = useQuery({
+    queryKey: ["portfolio-history", days],
+    queryFn: () => fetchPortfolioHistory(days),
+    enabled,
+    staleTime: 10 * 60_000,
+  });
+
+  if (!enabled) return null;
+
+  const missing = data?.missingHistory ?? [];
+
+  return (
+    <Card style={styles.groupCard}>
+      <AppText style={[styles.groupTitle, { color: colors.goldSoft }]}>
+        روند ارزش دارایی‌ها
+      </AppText>
+
+      <RangeChips value={days} onChange={setDays} />
+
+      {isLoading ? (
+        <View style={styles.modalLoading}>
+          <ActivityIndicator color={colors.gold} />
+        </View>
+      ) : error ? (
+        <AppText style={[styles.errorBanner, { color: colors.danger }]}>
+          {extractErrorMessage(error)}
+        </AppText>
+      ) : (
+        <LineChart points={data?.points ?? []} height={200} />
+      )}
+
+      <AppText style={[styles.chartHint, { color: colors.textMuted }]}>
+        بر اساس تعداد دارایی‌های ذخیره‌شده‌ی فعلی و قیمت هر روز محاسبه می‌شود.
+      </AppText>
+      {missing.length > 0 ? (
+        <AppText style={[styles.chartHint, { color: colors.textMuted }]}>
+          برای {missing.join("، ")} تاریخچه‌ای موجود نبود و با قیمت امروز ثابت
+          در نظر گرفته شده.
+        </AppText>
+      ) : null}
+    </Card>
+  );
+}
+
 /** پنجره‌ی نمودار روند یک دارایی */
 function TrendModal({
   assetKey,
@@ -108,41 +217,7 @@ function TrendModal({
             روند قیمت {label}
           </AppText>
 
-          <View style={styles.rangeRow}>
-            {[7, 30, 90, 365].map((d) => {
-              const active = days === d;
-              return (
-                <Pressable
-                  key={d}
-                  onPress={() => setDays(d)}
-                  style={[
-                    styles.rangeChip,
-                    {
-                      borderColor: active ? colors.gold : colors.border,
-                      backgroundColor: active
-                        ? colors.surfaceElevated
-                        : "transparent",
-                    },
-                  ]}
-                >
-                  <AppText
-                    style={[
-                      styles.rangeText,
-                      { color: active ? colors.gold : colors.textSecondary },
-                    ]}
-                  >
-                    {d === 7
-                      ? "۱ هفته"
-                      : d === 30
-                      ? "۱ ماه"
-                      : d === 90
-                      ? "۳ ماه"
-                      : "۱ سال"}
-                  </AppText>
-                </Pressable>
-              );
-            })}
-          </View>
+          <RangeChips value={days} onChange={setDays} />
 
           {isLoading ? (
             <View style={styles.modalLoading}>
@@ -178,6 +253,7 @@ export default function DashboardScreen() {
   const [saveError, setSaveError] = useState<string | null>(null);
   const [savedAt, setSavedAt] = useState<number | null>(null);
   const [trendAsset, setTrendAsset] = useState<HoldingItem | null>(null);
+  const [exporting, setExporting] = useState(false);
 
   // وقتی داده‌ی سرور اومد، فرم رو با تعداد ذخیره‌شده‌ی قبلی کاربر پر کن -
   // ولی فقط اگه کاربر همین الان در حال ویرایش نیست (تا ادیت‌های نشسته پاک نشه)
@@ -214,6 +290,8 @@ export default function DashboardScreen() {
       setSaveError(null);
       setSavedAt(Date.now());
       await queryClient.invalidateQueries({ queryKey: ["holdings-summary"] });
+      // نمودار روند از دارایی‌های ذخیره‌شده می‌خواند، پس باید دوباره گرفته شود
+      await queryClient.invalidateQueries({ queryKey: ["portfolio-history"] });
     },
     onError: (err) => setSaveError(extractErrorMessage(err)),
   });
@@ -258,6 +336,61 @@ export default function DashboardScreen() {
       profitPercent: cost > 0 && profit !== null ? (profit / cost) * 100 : null,
     };
   }, [items, quantities, buyPrices]);
+
+  // خروجی CSV از همان چیزی که روی صفحه است (مقادیر در حال ویرایش، نه فقط
+  // ذخیره‌شده‌ها) تا خروجی با عددهایی که کاربر می‌بیند بخواند.
+  async function handleExport() {
+    const rows: CsvHoldingRow[] = items
+      .map((item) => {
+        const quantity = Number(quantities[item.assetKey]) || 0;
+        const buy = Number(buyPrices[item.assetKey]) || 0;
+        const price = item.price;
+        const value = quantity * (price ?? 0);
+        const cost = quantity > 0 && buy > 0 && price !== null ? buy * quantity : null;
+        const profit = cost !== null ? value - cost : null;
+        return {
+          label: item.label,
+          categoryLabel: CATEGORY_LABELS[item.category] ?? item.category,
+          unit: item.unit,
+          quantity,
+          avgBuyPrice: buy > 0 ? buy : null,
+          price,
+          value,
+          profit,
+          profitPercent:
+            cost !== null && cost > 0 && profit !== null ? (profit / cost) * 100 : null,
+        };
+      })
+      .filter((r) => r.quantity > 0);
+
+    if (rows.length === 0) {
+      Alert.alert(
+        "خروجی گرفتن",
+        "هنوز دارایی‌ای با تعداد بیشتر از صفر ثبت نکرده‌اید."
+      );
+      return;
+    }
+
+    setExporting(true);
+    try {
+      const csv = buildHoldingsCsv(rows, live);
+      const baseName = holdingsCsvBaseName();
+      const result = await saveTextFile(baseName, "text/csv", csv);
+
+      if (result.status === "saved") {
+        Alert.alert(
+          "ذخیره شد",
+          `فایل «${baseName}.csv» با ${rows.length} دارایی در «${result.location}» ذخیره شد.`
+        );
+      } else if (result.status === "shared") {
+        Alert.alert("آماده شد", "خروجی برای اشتراک‌گذاری ارسال شد.");
+      }
+    } catch {
+      Alert.alert("خطا", "ساخت فایل خروجی ممکن نشد.");
+    } finally {
+      setExporting(false);
+    }
+  }
 
   // ترکیب دارایی‌ها برای نمودار — فقط آیتم‌هایی که واقعاً ارزش دارن
   const chartSlices: DonutSlice[] = useMemo(
@@ -406,6 +539,10 @@ export default function DashboardScreen() {
         </Card>
       )}
 
+      {/* شرط را از داده‌ی ذخیره‌شده می‌گیریم نه فرم، چون نمودار هم از همان
+          می‌آید و گرنه به‌محض تایپ یک عدد، کارتِ خالی ظاهر می‌شد. */}
+      <PortfolioTrendCard enabled={items.some((i) => i.quantity > 0)} />
+
       {grouped.map((group) => (
         <Card key={group.category} style={styles.groupCard}>
           <AppText style={[styles.groupTitle, { color: colors.goldSoft }]}>
@@ -448,6 +585,14 @@ export default function DashboardScreen() {
       <PrimaryButton
         title="🔔 هشدارهای قیمت"
         onPress={() => router.push("/(app)/alerts")}
+        variant="outline"
+        style={styles.alertsButton}
+      />
+
+      <PrimaryButton
+        title="📤 خروجی اکسل (CSV)"
+        onPress={handleExport}
+        loading={exporting}
         variant="outline"
         style={styles.alertsButton}
       />
@@ -505,6 +650,12 @@ const styles = StyleSheet.create({
   profitCost: { fontSize: 11, marginTop: spacing.xs },
   profitHint: { fontSize: 12, lineHeight: 20, textAlign: "right", marginTop: 4 },
   groupCard: { marginBottom: spacing.md },
+  chartHint: {
+    fontSize: 11,
+    lineHeight: 18,
+    textAlign: "right",
+    marginTop: spacing.xs,
+  },
   groupTitle: {
     fontSize: 16,
     fontWeight: "700",
