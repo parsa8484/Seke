@@ -51,6 +51,12 @@ import {
   sanitizeNumericInput,
 } from "../../src/utils/format";
 import { HoldingItem } from "../../src/api/types";
+import { fetchMarket } from "../../src/api/market";
+import {
+  computeIntrinsic,
+  intrinsicSymbolForAsset,
+  IntrinsicPrice,
+} from "../../src/utils/intrinsic";
 
 const CATEGORY_LABELS: Record<string, string> = {
   coin: "سکه",
@@ -497,6 +503,28 @@ export default function DashboardScreen() {
 
   const items: HoldingItem[] = data?.items ?? [];
 
+  // فهرست بازار فقط برای انس جهانی و دلارِ قیمت محاسباتی لازم است. همان
+  // queryKey تب «قیمت‌ها» است، پس اگر کاربر آن تب را باز کرده باشد از کش
+  // خوانده می‌شود و درخواست تازه‌ای نمی‌رود. خطایش هم بی‌اهمیت است: بدون آن
+  // فقط بخش حباب رندر نمی‌شود.
+  const { data: market } = useQuery({
+    queryKey: ["market"],
+    queryFn: fetchMarket,
+    staleTime: 60_000,
+  });
+
+  const intrinsicByAsset = useMemo(() => {
+    const map: Record<string, IntrinsicPrice> = {};
+    if (!market?.items) return map;
+    for (const item of items) {
+      const symbol = intrinsicSymbolForAsset(item.assetKey);
+      if (!symbol) continue;
+      const value = computeIntrinsic(symbol, market.items, item.price);
+      if (value) map[item.assetKey] = value;
+    }
+    return map;
+  }, [items, market]);
+
   // همه‌ی محاسبه‌ها روی مقادیر در حال ویرایش انجام می‌شه (نه مقادیر ذخیره‌شده)
   // تا کاربر نتیجه رو قبل از زدن «ذخیره» ببینه.
   const live = useMemo(() => {
@@ -745,6 +773,7 @@ export default function DashboardScreen() {
               onChangeBuyPrice={handleChangeBuyPrice}
               onPressChart={() => setTrendAsset(item)}
               usdRate={group.category === "crypto" ? usdRate : null}
+              intrinsic={intrinsicByAsset[item.assetKey]}
             />
           ))}
         </Card>

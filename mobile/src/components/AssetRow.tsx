@@ -12,6 +12,7 @@ import {
   formatSignedToman,
 } from "../utils/format";
 import { HoldingItem } from "../api/types";
+import { bubbleTone, IntrinsicPrice } from "../utils/intrinsic";
 
 interface Props {
   item: HoldingItem;
@@ -23,6 +24,8 @@ interface Props {
   // نرخ دلار به تومان — اگه داده بشه، معادل دلاری قیمت هم زیرش نشون داده می‌شه
   // (برای رمزارزها که مرجع جهانی‌شون دلاره)
   usdRate?: number | null;
+  // قیمت محاسباتی از انس جهانی و دلار — فقط طلای ۱۸ عیار و نقره‌ی ۹۹۹
+  intrinsic?: IntrinsicPrice | null;
 }
 
 export function AssetRow({
@@ -33,6 +36,7 @@ export function AssetRow({
   onChangeBuyPrice,
   onPressChart,
   usdRate,
+  intrinsic,
 }: Props) {
   const { colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
@@ -58,6 +62,16 @@ export function AssetRow({
       ? colors.success
       : profit < 0
       ? colors.danger
+      : colors.textMuted;
+
+  // حباب مثبت (بازار گران‌تر از قیمت جهانی) قرمز است، نه سبز — برای خریدار
+  // خبر بدی است، برخلاف سود که سبز است.
+  const tone = intrinsic ? bubbleTone(intrinsic) : null;
+  const bubbleColor =
+    tone === "over"
+      ? colors.danger
+      : tone === "under"
+      ? colors.success
       : colors.textMuted;
 
   return (
@@ -99,6 +113,33 @@ export function AssetRow({
           </Pressable>
         ) : null}
       </View>
+
+      {/* ------------------- قیمت محاسباتی و حباب -------------------
+          فقط برای طلای ۱۸ عیار و نقره: قیمت جهانی (انس × دلار) در برابر قیمت
+          بازار داخلی، تا معلوم شود چقدر از آن حباب است. */}
+      {intrinsic ? (
+        <View style={[styles.intrinsic, { borderColor: colors.border }]}>
+          <View style={styles.intrinsicRow}>
+            <AppText style={styles.intrinsicLabel}>قیمت محاسباتی</AppText>
+            <AppText
+              style={[styles.intrinsicValue, { color: colors.textSecondary }]}
+            >
+              {formatToman(intrinsic.computed)} تومان
+            </AppText>
+          </View>
+          <View style={styles.intrinsicRow}>
+            <AppText style={styles.intrinsicLabel}>حباب</AppText>
+            <AppText style={[styles.intrinsicValue, { color: bubbleColor }]}>
+              {formatSignedToman(intrinsic.bubble)} (
+              {formatPercent(intrinsic.bubblePercent)})
+            </AppText>
+          </View>
+          <AppText style={styles.intrinsicHint}>
+            {intrinsic.ounceLabel} ${formatUsd(intrinsic.ounce)} × دلار{" "}
+            {formatToman(intrinsic.usd)}
+          </AppText>
+        </View>
+      ) : null}
 
       {/* ------------------------- فیلدهای ورودی -------------------------
           هر دو فیلد همیشه رندر می‌شن و عرضشون برابره، تا ستون‌ها در همه‌ی
@@ -194,6 +235,26 @@ const makeStyles = (colors: AppColors) =>
       backgroundColor: colors.surface,
       alignItems: "center",
       justifyContent: "center",
+    },
+    intrinsic: {
+      borderWidth: 1,
+      borderRadius: radius.sm,
+      paddingHorizontal: spacing.sm,
+      paddingVertical: spacing.xs + 2,
+      gap: 3,
+    },
+    intrinsicRow: {
+      flexDirection: "row-reverse",
+      justifyContent: "space-between",
+      alignItems: "center",
+    },
+    intrinsicLabel: { fontSize: 10, color: colors.textMuted },
+    intrinsicValue: { fontSize: 12, fontWeight: "700" },
+    intrinsicHint: {
+      fontSize: 9,
+      color: colors.textMuted,
+      textAlign: "right",
+      marginTop: 1,
     },
     fieldsRow: { flexDirection: "row-reverse", gap: spacing.sm },
     field: { flex: 1 },

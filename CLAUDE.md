@@ -78,6 +78,8 @@ The dollar leg reads market symbol **`price_dollar_rl`**, not `currency_usd`: th
 
 Only `geram18` and `silver_999` are wired up (`SPECS`); adding another purity is one entry with its own gram factor.
 
+Both tabs show it. The market list looks the symbol up directly; the holdings tab cannot, because `/api/holdings` returns only `assetKey` — hence `ASSET_KEY_TO_SYMBOL` (`gold_geram18` → `geram18`, `silver_999_gram` → `silver_999`). The dashboard subscribes to the **same `["market"]` query key** as the قیمت‌ها tab rather than adding an endpoint, so when that tab has been opened the data comes from cache; a failure there just hides the bubble block. `computeIntrinsic`'s optional `marketPrice` exists for this call site: the bubble must be measured against the price rendered in the same box (the asset's own), not a second price looked up from the market list.
+
 ### Auth & roles
 JWT (`backend/src/utils/jwt.ts`) + bcrypt password hashing. `User.role` (`"user"|"admin"`) and `User.isActive` gate access. `backend/src/middleware/admin.ts`'s `requireAdmin` re-reads the role from the DB on every request rather than trusting the JWT payload, so admin promotion/demotion and account deactivation take effect immediately without waiting for token expiry. `isActive: false` users are rejected at login and at `/api/auth/me` with 403.
 

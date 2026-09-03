@@ -59,14 +59,50 @@ export function hasIntrinsicPrice(symbol: string): boolean {
   return symbol in SPECS;
 }
 
+/**
+ * کلید دارایی در پرتفوی → نماد متناظر در فهرست بازار.
+ *
+ * پاسخ `/api/holdings` نماد tgju را برنمی‌گرداند (فقط `assetKey`)، پس تب
+ * «دارایی‌ها» بدون این نگاشت نمی‌داند قیمت محاسباتی را با کدام انس بسنجد.
+ * فقط همان دو دارایی‌ای که SPECS پوشش می‌دهد اینجا هستند.
+ */
+const ASSET_KEY_TO_SYMBOL: Record<string, string> = {
+  gold_geram18: "geram18",
+  silver_999_gram: "silver_999",
+};
+
+export function intrinsicSymbolForAsset(assetKey: string): string | null {
+  return ASSET_KEY_TO_SYMBOL[assetKey] ?? null;
+}
+
+/**
+ * حباب مثبت = بازار گران‌تر از قیمت جهانی. زیر نیم درصد را «تقریباً برابر»
+ * می‌گیریم چون اختلاف لحظه‌ای انس و دلار همیشه چند دهم درصد نوسان دارد.
+ */
+export type BubbleTone = "flat" | "over" | "under";
+
+export function bubbleTone(intrinsic: IntrinsicPrice): BubbleTone {
+  if (Math.abs(intrinsic.bubblePercent) < 0.5) return "flat";
+  return intrinsic.bubble > 0 ? "over" : "under";
+}
+
+/**
+ * `marketPrice` برای جایی است که قیمتِ روی صفحه از فهرست بازار نمی‌آید (تب
+ * دارایی‌ها قیمت خودِ دارایی را نشان می‌دهد)؛ حباب باید نسبت به همان عددی
+ * حساب شود که کاربر کنارش می‌بیند، نه یک قیمت دوم.
+ */
 export function computeIntrinsic(
   symbol: string,
-  items: MarketItem[] | undefined
+  items: MarketItem[] | undefined,
+  marketPrice?: number | null
 ): IntrinsicPrice | null {
   const spec = SPECS[symbol];
   if (!spec || !items) return null;
 
-  const target = items.find((i) => i.symbol === symbol);
+  const target =
+    marketPrice && marketPrice > 0
+      ? { price: marketPrice }
+      : items.find((i) => i.symbol === symbol);
   // به ترتیب اولویتِ USD_SYMBOLS، نه به ترتیب چیدمان فهرست
   let usd: MarketItem | undefined;
   for (const candidate of USD_SYMBOLS) {

@@ -25,6 +25,7 @@ import {
 import { MarketItem } from "../../../src/api/types";
 import {
   buildIntrinsicMap,
+  bubbleTone,
   IntrinsicPrice,
 } from "../../../src/utils/intrinsic";
 
@@ -41,10 +42,10 @@ const SORT_OPTIONS: { key: SortMode; label: string }[] = [
   { key: "name", label: "الفبا" },
 ];
 
-/** حباب مثبت = بازار گران‌تر از قیمت جهانی؛ زیر نیم درصد را «تقریباً برابر» می‌گیریم */
 function bubbleColor(intrinsic: IntrinsicPrice, colors: AppColors): string {
-  if (Math.abs(intrinsic.bubblePercent) < 0.5) return colors.textMuted;
-  return intrinsic.bubble > 0 ? colors.danger : colors.success;
+  const tone = bubbleTone(intrinsic);
+  if (tone === "flat") return colors.textMuted;
+  return tone === "over" ? colors.danger : colors.success;
 }
 
 function priceText(item: MarketItem): string {
