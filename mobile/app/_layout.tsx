@@ -1,5 +1,8 @@
 import "react-native-reanimated";
-import React from "react";
+// باید قبل از هر رندری اجرا شود: RTLِ خودکارِ سیستم را خاموش می‌کند
+// (توضیح کامل در src/utils/rtl.ts)
+import { ensureLtrLayout } from "../src/utils/rtl";
+import React, { useEffect, useRef } from "react";
 import { Slot } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -11,7 +14,14 @@ import { AuthProvider } from "../src/context/AuthContext";
 import { ThemeProvider, useTheme } from "../src/context/ThemeContext";
 import { LockProvider, useLock } from "../src/context/LockContext";
 import { LockScreen } from "../src/components/LockScreen";
-import { View, StyleSheet, ActivityIndicator } from "react-native";
+import { fetchAndApplyUpdate, prefetchUpdate } from "../src/utils/otaUpdates";
+import {
+  View,
+  StyleSheet,
+  ActivityIndicator,
+  AppState,
+  type AppStateStatus,
+} from "react-native";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -50,6 +60,33 @@ function ThemedShell() {
 }
 
 export default function RootLayout() {
+  const appState = useRef(AppState.currentState);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    (async () => {
+      // اگر اپ در حالت RTL بالا آمده باشد اینجا ری‌لود می‌شود؛ در آن صورت
+      // چک آپدیت بی‌فایده است چون همین الان کل جاوااسکریپت دوباره اجرا می‌شود.
+      const reloading = await ensureLtrLayout();
+      if (reloading || cancelled) return;
+      await fetchAndApplyUpdate();
+    })();
+
+    // برگشت از پس‌زمینه: فقط دانلود، بدون ری‌لودِ وسط کارِ کاربر
+    const sub = AppState.addEventListener("change", (next: AppStateStatus) => {
+      const cameToForeground =
+        appState.current.match(/inactive|background/) && next === "active";
+      appState.current = next;
+      if (cameToForeground) void prefetchUpdate();
+    });
+
+    return () => {
+      cancelled = true;
+      sub.remove();
+    };
+  }, []);
+
   return (
     <SafeAreaProvider>
       <QueryClientProvider client={queryClient}>

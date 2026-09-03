@@ -1,4 +1,10 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   View,
   StyleSheet,
@@ -8,8 +14,10 @@ import {
   Pressable,
   ActivityIndicator,
   Alert,
+  AppState,
 } from "react-native";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { router } from "expo-router";
 import { AppText } from "../../src/components/AppText";
 import { Card } from "../../src/components/Card";
@@ -56,6 +64,41 @@ const CATEGORY_ORDER = ["coin", "gold", "fund", "currency", "crypto", "manual"];
 
 // نرخ دلار به تومان — برای نشون دادن معادل دلاری رمزارزها
 const USD_ASSET_KEY = "currency_usd";
+
+/**
+ * ذخیره‌ی خودکار.
+ *
+ * قبلاً اگر کاربر تعداد را وارد می‌کرد و «ذخیره و محاسبه» را نمی‌زد، با بستن اپ
+ * همه‌چیز از بین می‌رفت. حالا دو لایه دارد:
+ *  ۱. بعد از AUTOSAVE_DELAY میلی‌ثانیه سکوت — و نیز موقع رفتن اپ به پس‌زمینه یا
+ *     خروج از این صفحه — خودکار روی سرور ذخیره می‌شود.
+ *  ۲. هر تغییر بی‌درنگ به‌صورت پیش‌نویس در حافظه‌ی دستگاه می‌نشیند، تا اگر اپ
+ *     قبل از رسیدن ذخیره‌ی سرور بسته/کشته شد یا اینترنت نبود، دفعه‌ی بعد
+ *     برگردانده و دوباره فرستاده شود.
+ */
+const AUTOSAVE_DELAY = 1200;
+const DRAFT_KEY_PREFIX = "sekeh_holdings_draft_v1:";
+
+type HoldingsForm = {
+  quantities: Record<string, string>;
+  buyPrices: Record<string, string>;
+};
+
+async function readDraft(key: string): Promise<HoldingsForm | null> {
+  try {
+    const raw = await AsyncStorage.getItem(key);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as HoldingsForm;
+    if (!parsed || typeof parsed !== "object") return null;
+    return {
+      quantities: parsed.quantities ?? {},
+      buyPrices: parsed.buyPrices ?? {},
+    };
+  } catch {
+    // پیش‌نویس خراب نباید جلوی بالا آمدن صفحه را بگیرد
+    return null;
+  }
+}
 
 function groupByCategory(items: HoldingItem[]) {
   const groups = new Map<string, HoldingItem[]>();
@@ -252,60 +295,204 @@ export default function DashboardScreen() {
   const dirtyRef = useRef(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [savedAt, setSavedAt] = useState<number | null>(null);
+  const [saveState, setSaveState] = useState<
+    "idle" | "dirty" | "saving" | "saved" | "error"
+  >("idle");
   const [trendAsset, setTrendAsset] = useState<HoldingItem | null>(null);
   const [exporting, setExporting] = useState(false);
 
-  // وقتی داده‌ی سرور اومد، فرم رو با تعداد ذخیره‌شده‌ی قبلی کاربر پر کن -
-  // ولی فقط اگه کاربر همین الان در حال ویرایش نیست (تا ادیت‌های نشسته پاک نشه)
-  useEffect(() => {
-    if (data && !dirtyRef.current) {
-      const initialQty: Record<string, string> = {};
-      const initialBuy: Record<string, string> = {};
-      for (const item of data.items) {
-        initialQty[item.assetKey] = item.quantity > 0 ? String(item.quantity) : "";
-        initialBuy[item.assetKey] =
-          item.avgBuyPrice && item.avgBuyPrice > 0
-            ? String(item.avgBuyPrice)
-            : "";
-      }
-      setQuantities(initialQty);
-      setBuyPrices(initialBuy);
-    }
-  }, [data]);
+  // مقدارِ لحظه‌ای فرم برای تایمرها و لیسنرها — از state خوانده نمی‌شود چون
+  // closureشان کهنه می‌ماند و ذخیره‌ی خودکار مقدار قدیمی را می‌فرستاد.
+  const formRef = useRef<HoldingsForm>({ quantities: {}, buyPrices: {} });
+  const autosaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const savingRef = useRef(false);
+  const pendingRef = useRef(false);
+  // شماره‌ی ویرایش: اگر کاربر وسطِ رفت‌وبرگشتِ ذخیره چیز تازه‌ای تایپ کند، فرم
+  // را «ذخیره‌شده» علامت نمی‌زنیم تا آن تایپ گم نشود.
+  const editVersionRef = useRef(0);
+  const draftKey = user ? `${DRAFT_KEY_PREFIX}${user.id}` : null;
 
-  const saveMutation = useMutation({
-    mutationFn: async () => {
-      const items = Object.entries(quantities).map(([assetKey, qty]) => ({
-        assetKey,
-        quantity: Number(qty) || 0,
-        // رشته‌ی خالی → null یعنی «قیمت خرید ثبت نشده»، نه صفر
-        avgBuyPrice: buyPrices[assetKey]?.trim()
-          ? Number(buyPrices[assetKey]) || null
-          : null,
-      }));
-      return saveHoldings(items);
+  const flushSave = useCallback(
+    async (force = false) => {
+      if (autosaveTimer.current) {
+        clearTimeout(autosaveTimer.current);
+        autosaveTimer.current = null;
+      }
+      if (!force && !dirtyRef.current) return;
+      if (savingRef.current) {
+        // ذخیره‌ای در راه است؛ بعد از تمام شدنش دوباره اجرا می‌شود
+        pendingRef.current = true;
+        return;
+      }
+
+      savingRef.current = true;
+      setSaveState("saving");
+      try {
+        let first = true;
+        do {
+          pendingRef.current = false;
+          if (!dirtyRef.current && !(first && force)) break;
+          first = false;
+
+          const version = editVersionRef.current;
+          const snapshot = formRef.current;
+          const items = Object.entries(snapshot.quantities).map(
+            ([assetKey, qty]) => ({
+              assetKey,
+              quantity: Number(qty) || 0,
+              // رشته‌ی خالی → null یعنی «قیمت خرید ثبت نشده»، نه صفر
+              avgBuyPrice: snapshot.buyPrices[assetKey]?.trim()
+                ? Number(snapshot.buyPrices[assetKey]) || null
+                : null,
+            })
+          );
+
+          await saveHoldings(items);
+
+          if (editVersionRef.current === version) {
+            dirtyRef.current = false;
+            if (draftKey) {
+              await AsyncStorage.removeItem(draftKey).catch(() => {});
+            }
+          }
+          setSaveError(null);
+          setSavedAt(Date.now());
+          setSaveState("saved");
+        } while (pendingRef.current);
+
+        await queryClient.invalidateQueries({ queryKey: ["holdings-summary"] });
+        // نمودار روند از دارایی‌های ذخیره‌شده می‌خواند، پس باید دوباره گرفته شود
+        await queryClient.invalidateQueries({ queryKey: ["portfolio-history"] });
+      } catch (err) {
+        // پیش‌نویس محلی دست‌نخورده می‌ماند تا دفعه‌ی بعد دوباره فرستاده شود
+        setSaveError(extractErrorMessage(err));
+        setSaveState("error");
+      } finally {
+        savingRef.current = false;
+      }
     },
-    onSuccess: async () => {
-      dirtyRef.current = false;
-      setSaveError(null);
-      setSavedAt(Date.now());
-      await queryClient.invalidateQueries({ queryKey: ["holdings-summary"] });
-      // نمودار روند از دارایی‌های ذخیره‌شده می‌خواند، پس باید دوباره گرفته شود
-      await queryClient.invalidateQueries({ queryKey: ["portfolio-history"] });
+    [draftKey, queryClient]
+  );
+
+  // وقتی داده‌ی سرور اومد، فرم رو با تعداد ذخیره‌شده‌ی قبلی کاربر پر کن — ولی
+  // فقط اگه کاربر همین الان در حال ویرایش نیست (تا ادیت‌های نشسته پاک نشه).
+  // اگر پیش‌نویس محلیِ نرسیده‌به‌سرور مانده باشد، روی این مقادیر می‌نشیند و
+  // بلافاصله فرستاده می‌شود.
+  useEffect(() => {
+    if (!data || dirtyRef.current) return;
+    let cancelled = false;
+
+    const serverQty: Record<string, string> = {};
+    const serverBuy: Record<string, string> = {};
+    for (const item of data.items) {
+      serverQty[item.assetKey] = item.quantity > 0 ? String(item.quantity) : "";
+      serverBuy[item.assetKey] =
+        item.avgBuyPrice && item.avgBuyPrice > 0 ? String(item.avgBuyPrice) : "";
+    }
+
+    (async () => {
+      const draft = draftKey ? await readDraft(draftKey) : null;
+      if (cancelled || dirtyRef.current) return;
+
+      const nextQty = { ...serverQty };
+      const nextBuy = { ...serverBuy };
+      let unsaved = false;
+
+      if (draft) {
+        // فقط دارایی‌هایی که هنوز در فهرست هستند؛ کلیدهای حذف‌شده نادیده
+        for (const [key, value] of Object.entries(draft.quantities)) {
+          if (key in nextQty && value !== nextQty[key]) {
+            nextQty[key] = value;
+            unsaved = true;
+          }
+        }
+        for (const [key, value] of Object.entries(draft.buyPrices)) {
+          if (key in nextBuy && value !== nextBuy[key]) {
+            nextBuy[key] = value;
+            unsaved = true;
+          }
+        }
+      }
+
+      formRef.current = { quantities: nextQty, buyPrices: nextBuy };
+      setQuantities(nextQty);
+      setBuyPrices(nextBuy);
+
+      if (unsaved) {
+        dirtyRef.current = true;
+        editVersionRef.current += 1;
+        void flushSave();
+      } else if (draft && draftKey) {
+        await AsyncStorage.removeItem(draftKey).catch(() => {});
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [data, draftKey, flushSave]);
+
+  // رفتن اپ به پس‌زمینه یا ترک صفحه = آخرین فرصت برای ذخیره‌ی چیزی که تایپ شده
+  useEffect(() => {
+    const sub = AppState.addEventListener("change", (next) => {
+      if (next !== "active" && dirtyRef.current) void flushSave();
+    });
+    return () => {
+      sub.remove();
+      if (dirtyRef.current) void flushSave();
+    };
+  }, [flushSave]);
+
+  useEffect(
+    () => () => {
+      if (autosaveTimer.current) clearTimeout(autosaveTimer.current);
     },
-    onError: (err) => setSaveError(extractErrorMessage(err)),
-  });
+    []
+  );
+
+  function markEdited(next: HoldingsForm) {
+    dirtyRef.current = true;
+    editVersionRef.current += 1;
+    formRef.current = next;
+    setSaveState("dirty");
+
+    // پیش‌نویس بدون تأخیر نوشته می‌شود؛ اگر اپ همین حالا کشته شود هم چیزی از
+    // دست نمی‌رود.
+    if (draftKey) {
+      AsyncStorage.setItem(draftKey, JSON.stringify(next)).catch(() => {});
+    }
+
+    if (autosaveTimer.current) clearTimeout(autosaveTimer.current);
+    autosaveTimer.current = setTimeout(() => {
+      autosaveTimer.current = null;
+      void flushSave();
+    }, AUTOSAVE_DELAY);
+  }
 
   // ورودی از راه sanitizeNumericInput رد می‌شه چون صفحه‌کلید فارسی ارقام
   // فارسی می‌فرسته و فیلتر ساده‌ی [^0-9.] همه‌شون رو پاک می‌کرد.
   function handleChangeQuantity(assetKey: string, value: string) {
-    dirtyRef.current = true;
-    setQuantities((prev) => ({ ...prev, [assetKey]: sanitizeNumericInput(value) }));
+    const next: HoldingsForm = {
+      quantities: {
+        ...formRef.current.quantities,
+        [assetKey]: sanitizeNumericInput(value),
+      },
+      buyPrices: formRef.current.buyPrices,
+    };
+    setQuantities(next.quantities);
+    markEdited(next);
   }
 
   function handleChangeBuyPrice(assetKey: string, value: string) {
-    dirtyRef.current = true;
-    setBuyPrices((prev) => ({ ...prev, [assetKey]: sanitizeNumericInput(value) }));
+    const next: HoldingsForm = {
+      quantities: formRef.current.quantities,
+      buyPrices: {
+        ...formRef.current.buyPrices,
+        [assetKey]: sanitizeNumericInput(value),
+      },
+    };
+    setBuyPrices(next.buyPrices);
+    markEdited(next);
   }
 
   const items: HoldingItem[] = data?.items ?? [];
@@ -569,7 +756,15 @@ export default function DashboardScreen() {
         </AppText>
       ) : null}
 
-      {savedAt && !saveMutation.isPending && !saveError ? (
+      {saveState === "saving" ? (
+        <AppText style={[styles.successBanner, { color: colors.textSecondary }]}>
+          در حال ذخیره‌ی خودکار…
+        </AppText>
+      ) : saveState === "dirty" ? (
+        <AppText style={[styles.successBanner, { color: colors.textMuted }]}>
+          تغییرات شما تا لحظاتی دیگر خودکار ذخیره می‌شود…
+        </AppText>
+      ) : savedAt && !saveError ? (
         <AppText style={[styles.successBanner, { color: colors.success }]}>
           ✓ دارایی‌های شما ذخیره شد ({ownedCount} مورد)
         </AppText>
@@ -577,10 +772,13 @@ export default function DashboardScreen() {
 
       <PrimaryButton
         title="ذخیره و محاسبه"
-        onPress={() => saveMutation.mutate()}
-        loading={saveMutation.isPending}
+        onPress={() => flushSave(true)}
+        loading={saveState === "saving"}
         style={styles.saveButton}
       />
+      <AppText style={[styles.chartHint, { color: colors.textMuted }]}>
+        نیازی به زدن این دکمه نیست؛ تعدادها خودکار ذخیره می‌شوند.
+      </AppText>
 
       <PrimaryButton
         title="🔔 هشدارهای قیمت"
