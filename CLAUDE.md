@@ -70,6 +70,14 @@ Categories in use: `coin`, `gold`, `fund`, `currency`, `crypto`, `manual`. The m
 
 The old `"crypto-bitcoin#1"` occurrence-index hack is gone: `ajax.json` has distinct keys for the USD and Rial variants (`crypto-bitcoin` vs `crypto-bitcoin-irr`). Portfolio assets use the `-irr` keys so totals stay summable in Toman; the app derives the USD display for `crypto` assets by dividing by the `currency_usd` price.
 
+### Computed (intrinsic) price and bubble
+
+`mobile/src/utils/intrinsic.ts` derives what a gram *should* cost from the global ounce and the dollar, and shows the gap as حباب on the market list row and the symbol detail screen. Both formulas are the same parity: `ounce($) × usd(toman) ÷ 31.1035 × purity` — 0.0241130419 is just `0.75 / 31.1035` for 18k gold, and silver 999 uses purity 1.
+
+The dollar leg reads market symbol **`price_dollar_rl`**, not `currency_usd`: the latter is an `Asset.assetKey` in the portfolio and does not exist in the tgju market list at all, so using it silently yields no card rather than a wrong number. Any missing or zero leg returns null and the UI renders nothing — a bubble computed against a stale or absent ounce would be worse than no bubble.
+
+Only `geram18` and `silver_999` are wired up (`SPECS`); adding another purity is one entry with its own gram factor.
+
 ### Auth & roles
 JWT (`backend/src/utils/jwt.ts`) + bcrypt password hashing. `User.role` (`"user"|"admin"`) and `User.isActive` gate access. `backend/src/middleware/admin.ts`'s `requireAdmin` re-reads the role from the DB on every request rather than trusting the JWT payload, so admin promotion/demotion and account deactivation take effect immediately without waiting for token expiry. `isActive: false` users are rejected at login and at `/api/auth/me` with 403.
 

@@ -19,8 +19,10 @@ import {
   formatToman,
   formatUsd,
   formatPercent,
+  formatSignedToman,
   formatRelativeTime,
 } from "../../../src/utils/format";
+import { computeIntrinsic } from "../../../src/utils/intrinsic";
 import { MarketHistory, MarketItem } from "../../../src/api/types";
 
 const RANGES = [
@@ -43,6 +45,12 @@ export default function MarketDetailScreen() {
 
   const item = useMemo<MarketItem | undefined>(
     () => market?.items.find((i: MarketItem) => i.symbol === symbol),
+    [market, symbol]
+  );
+
+  // فقط برای طلای ۱۸ عیار و نقره‌ی ۹۹۹ مقدار می‌گیرد؛ بقیه null
+  const intrinsic = useMemo(
+    () => computeIntrinsic(String(symbol), market?.items),
     [market, symbol]
   );
 
@@ -131,6 +139,65 @@ export default function MarketDetailScreen() {
           </View>
           <AppText style={[styles.updated, { color: colors.textMuted }]}>
             آخرین به‌روزرسانی: {formatRelativeTime(item.updatedAt)}
+          </AppText>
+        </Card>
+      ) : null}
+
+      {intrinsic ? (
+        <Card style={styles.card}>
+          <AppText style={[styles.sectionTitle, { color: colors.goldSoft }]}>
+            قیمت محاسباتی و حباب
+          </AppText>
+          <AppText style={[styles.bigPrice, { color: colors.textPrimary }]}>
+            {formatToman(intrinsic.computed)} تومان
+          </AppText>
+
+          <View style={styles.statsRow}>
+            <View style={styles.stat}>
+              <AppText style={[styles.statLabel, { color: colors.textMuted }]}>
+                حباب
+              </AppText>
+              <AppText
+                style={[
+                  styles.statValue,
+                  {
+                    color:
+                      Math.abs(intrinsic.bubblePercent) < 0.5
+                        ? colors.textMuted
+                        : intrinsic.bubble > 0
+                        ? colors.danger
+                        : colors.success,
+                  },
+                ]}
+              >
+                {formatPercent(intrinsic.bubblePercent)}
+              </AppText>
+            </View>
+            <View style={styles.stat}>
+              <AppText style={[styles.statLabel, { color: colors.textMuted }]}>
+                اختلاف با بازار
+              </AppText>
+              <AppText style={styles.statValue}>
+                {formatSignedToman(intrinsic.bubble)}
+              </AppText>
+            </View>
+            <View style={styles.stat}>
+              <AppText style={[styles.statLabel, { color: colors.textMuted }]}>
+                قیمت بازار
+              </AppText>
+              <AppText style={styles.statValue}>
+                {formatToman(intrinsic.market)}
+              </AppText>
+            </View>
+          </View>
+
+          <AppText style={[styles.updated, { color: colors.textMuted }]}>
+            بر اساس {intrinsic.ounceLabel} ${formatUsd(intrinsic.ounce)} و دلار{" "}
+            {formatToman(intrinsic.usd)} تومان محاسبه شده.
+          </AppText>
+          <AppText style={[styles.updated, { color: colors.textMuted }]}>
+            حباب مثبت یعنی قیمت بازار از قیمت جهانی بالاتر است و حباب منفی یعنی
+            پایین‌تر.
           </AppText>
         </Card>
       ) : null}

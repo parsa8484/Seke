@@ -23,6 +23,10 @@ import {
   formatRelativeTime,
 } from "../../../src/utils/format";
 import { MarketItem } from "../../../src/api/types";
+import {
+  buildIntrinsicMap,
+  IntrinsicPrice,
+} from "../../../src/utils/intrinsic";
 
 const ALL = "__all__";
 
@@ -36,6 +40,12 @@ const SORT_OPTIONS: { key: SortMode; label: string }[] = [
   { key: "price", label: "گران‌ترین" },
   { key: "name", label: "الفبا" },
 ];
+
+/** حباب مثبت = بازار گران‌تر از قیمت جهانی؛ زیر نیم درصد را «تقریباً برابر» می‌گیریم */
+function bubbleColor(intrinsic: IntrinsicPrice, colors: AppColors): string {
+  if (Math.abs(intrinsic.bubblePercent) < 0.5) return colors.textMuted;
+  return intrinsic.bubble > 0 ? colors.danger : colors.success;
+}
 
 function priceText(item: MarketItem): string {
   if (item.unit === "usd") return `$${formatUsd(item.price)}`;
@@ -56,7 +66,15 @@ function signedChange(item: MarketItem): number {
   return item.changePercent ?? 0;
 }
 
-function MarketRow({ item, colors }: { item: MarketItem; colors: AppColors }) {
+function MarketRow({
+  item,
+  colors,
+  intrinsic,
+}: {
+  item: MarketItem;
+  colors: AppColors;
+  intrinsic?: IntrinsicPrice;
+}) {
   const change = signedChange(item);
   const flat = change === 0;
   const up = change > 0;
@@ -89,6 +107,15 @@ function MarketRow({ item, colors }: { item: MarketItem; colors: AppColors }) {
         <AppText style={[styles.rowSymbol, { color: colors.textMuted }]}>
           {item.symbol}
         </AppText>
+        {/* برای طلای ۱۸ و نقره، حبابِ قیمت بازار نسبت به قیمت جهانی */}
+        {intrinsic ? (
+          <AppText
+            style={[styles.rowBubble, { color: bubbleColor(intrinsic, colors) }]}
+          >
+            حباب {formatPercent(intrinsic.bubblePercent)} · محاسباتی{" "}
+            {formatToman(intrinsic.computed)}
+          </AppText>
+        ) : null}
       </View>
 
       <View style={styles.rowValues}>
@@ -137,6 +164,9 @@ export default function MarketScreen() {
     staleTime: 60_000,
     refetchInterval: 120_000,
   });
+
+  // قیمت محاسباتی/حباب یک‌بار برای کل لیست حساب می‌شود، نه داخل هر ردیف
+  const intrinsicMap = useMemo(() => buildIntrinsicMap(data?.items), [data]);
 
   const categories: { key: string; label: string }[] = useMemo(
     () => [{ key: ALL, label: "همه" }, ...(data?.categories ?? [])],
@@ -361,7 +391,11 @@ export default function MarketScreen() {
               </AppText>
             </View>
           ) : (
-            <MarketRow item={row.item} colors={colors} />
+            <MarketRow
+              item={row.item}
+              colors={colors}
+              intrinsic={intrinsicMap[row.item.symbol]}
+            />
           )
         }
         contentContainerStyle={styles.listContent}
@@ -475,6 +509,7 @@ const styles = StyleSheet.create({
   rowInfo: { flex: 1, alignItems: "flex-end" },
   rowLabel: { fontSize: 14, fontWeight: "600" },
   rowSymbol: { fontSize: 10, marginTop: 2 },
+  rowBubble: { fontSize: 10, marginTop: 3, textAlign: "right" },
   rowValues: { alignItems: "flex-start", minWidth: 128 },
   rowPrice: { fontSize: 14, fontWeight: "700" },
   changeBadge: {
