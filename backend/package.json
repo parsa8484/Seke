@@ -12,7 +12,9 @@
     "prisma:migrate:deploy": "prisma migrate deploy",
     "prisma:studio": "prisma studio",
     "make-admin": "tsx scripts/set-admin.ts",
-    "set-username": "tsx scripts/set-username.ts"
+    "set-username": "tsx scripts/set-username.ts",
+    "list-users": "tsx scripts/list-users.ts",
+    "reset-password": "tsx scripts/reset-password.ts"
   },
   "dependencies": {
     "@prisma/client": "^5.20.0",
