@@ -1,5 +1,5 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { fetchServerHoldings } from "../api/holdings";
+import { fetchServerHoldings, wipeServerHoldings } from "../api/holdings";
 
 /**
  * دارایی‌های کاربر — روی خود دستگاه.
@@ -22,6 +22,10 @@ export type LocalHoldings = Record<string, LocalHolding>;
 
 const STORE_PREFIX = "sekeh_holdings_v1:";
 const MIGRATED_PREFIX = "sekeh_holdings_migrated_v1:";
+/** لیست نمادهایی که باید از سرور خالی شوند؛ تا موفق نشود پاک نمی‌شود */
+const WIPE_PENDING_PREFIX = "sekeh_holdings_wipe_pending_v1:";
+/** نسخه‌ی سرور خالی شده و دیگر کاری با آن نداریم */
+const WIPED_PREFIX = "sekeh_holdings_wiped_v1:";
 /**
  * کلید پیش‌نویسِ نسخه‌های قبلی. آن موقع فقط بافرِ «هنوز روی سرور ذخیره نشده»
  * بود؛ حالا باید موقع مهاجرت خوانده شود وگرنه چیزی که کاربر همان دقایق آخر
@@ -31,7 +35,26 @@ const LEGACY_DRAFT_PREFIX = "sekeh_holdings_draft_v1:";
 
 const storeKey = (userId: string) => `${STORE_PREFIX}${userId}`;
 const migratedKey = (userId: string) => `${MIGRATED_PREFIX}${userId}`;
+const wipePendingKey = (userId: string) => `${WIPE_PENDING_PREFIX}${userId}`;
+const wipedKey = (userId: string) => `${WIPED_PREFIX}${userId}`;
 const legacyDraftKey = (userId: string) => `${LEGACY_DRAFT_PREFIX}${userId}`;
+
+async function readFlag(key: string): Promise<string | null> {
+  try {
+    return await AsyncStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
+async function writeFlag(key: string, value: string): Promise<void> {
+  try {
+    await AsyncStorage.setItem(key, value);
+  } catch {
+    // اگر علامت ننشست، دفعه‌ی بعد همان کار تکرار می‌شود — همه‌ی مرحله‌ها
+    // عمداً idempotent هستند.
+  }
+}
 
 /** عددِ ورودی را به چیزی که ارزش ذخیره کردن دارد تبدیل می‌کند */
 function sanitize(holding: Partial<LocalHolding>): LocalHolding | null {
@@ -63,10 +86,11 @@ export async function readLocalHoldings(userId: string): Promise<LocalHoldings> 
   }
 }
 
+/** true یعنی واقعاً روی دیسک نشست */
 export async function writeLocalHoldings(
   userId: string,
   holdings: LocalHoldings
-): Promise<void> {
+): Promise<boolean> {
   const clean: LocalHoldings = {};
   for (const [key, value] of Object.entries(holdings)) {
     const sane = sanitize(value);
@@ -74,8 +98,10 @@ export async function writeLocalHoldings(
   }
   try {
     await AsyncStorage.setItem(storeKey(userId), JSON.stringify(clean));
+    return true;
   } catch {
     // جایی برای نوشتن نیست؛ چیزی که روی صفحه است دست‌کم تا بسته شدن اپ می‌ماند
+    return false;
   }
 }
 
@@ -107,6 +133,36 @@ async function readLegacyDraft(userId: string): Promise<LocalHoldings> {
 }
 
 /**
+ * آیا هرچه قرار بود ذخیره شود واقعاً روی دیسک هست؟
+ * فقط برای قبل از خالی کردن نسخه‌ی سرور — بعدش دیگر راه برگشتی نیست.
+ */
+async function verifyStored(
+  userId: string,
+  expected: LocalHoldings
+): Promise<boolean> {
+  const stored = await readLocalHoldings(userId);
+  return Object.entries(expected).every(([key, value]) => {
+    const sane = sanitize(value);
+    if (!sane) return true;
+    const got = stored[key];
+    return (
+      got !== undefined &&
+      got.quantity === sane.quantity &&
+      got.avgBuyPrice === sane.avgBuyPrice
+    );
+  });
+}
+
+/** نمادهایی که سرور برای این کاربر داده‌ی واقعی دارد */
+function keysWithData(
+  items: { assetKey: string; quantity: number; avgBuyPrice: number | null }[]
+) {
+  return items
+    .filter((i) => i.quantity > 0 || (i.avgBuyPrice ?? 0) > 0)
+    .map((i) => i.assetKey);
+}
+
+/**
  * مهاجرتِ یک‌باره‌ی دارایی‌های قبلی به گوشی.
  *
  * کاربرهای فعلی تعدادهایشان را روی سرور دارند و بعضی‌شان یک پیش‌نویس محلیِ
@@ -124,12 +180,8 @@ async function readLegacyDraft(userId: string): Promise<LocalHoldings> {
  *  ۴. پاسخ ۴۰۴ یعنی اندپوینت از سرور حذف شده؛ دیگر چیزی برای آوردن نیست و
  *     تلاش‌های بعدی بی‌فایده‌اند.
  */
-export async function migrateServerHoldings(userId: string): Promise<void> {
-  try {
-    if (await AsyncStorage.getItem(migratedKey(userId))) return;
-  } catch {
-    return;
-  }
+async function pullFromServer(userId: string): Promise<void> {
+  if (await readFlag(migratedKey(userId))) return;
 
   const [current, draft] = await Promise.all([
     readLocalHoldings(userId),
@@ -137,6 +189,7 @@ export async function migrateServerHoldings(userId: string): Promise<void> {
   ]);
 
   const fromServer: LocalHoldings = {};
+  let serverKeys: string[] = [];
   let serverAnswered = true;
 
   try {
@@ -148,27 +201,101 @@ export async function migrateServerHoldings(userId: string): Promise<void> {
       });
       if (clean) fromServer[item.assetKey] = clean;
     }
+    serverKeys = keysWithData(summary.items);
   } catch (err) {
     const status = (err as { response?: { status?: number } })?.response?.status;
     serverAnswered = status === 404;
   }
 
   const merged: LocalHoldings = { ...fromServer, ...draft, ...current };
-  if (Object.keys(merged).length > 0) {
-    await writeLocalHoldings(userId, merged);
+  const written =
+    Object.keys(merged).length === 0
+      ? true
+      : (await writeLocalHoldings(userId, merged)) &&
+        // دوباره از دیسک می‌خوانیم و تطبیق می‌دهیم. این تنها ضمانتی است که
+        // قبل از خالی کردن نسخه‌ی سرور داریم، پس به «خطا نداد» اکتفا نمی‌کنیم.
+        (await verifyStored(userId, merged));
+
+  // اگر سرور جواب نداد (قطعی شبکه) یا نوشتن روی دیسک شکست خورد، نه علامت
+  // می‌زنیم نه پیش‌نویس را پاک می‌کنیم؛ دفعه‌ی بعد دوباره سراغش می‌رویم.
+  if (!serverAnswered || !written) return;
+
+  // فهرست چیزی که باید از سرور خالی شود همین‌جا ثبت می‌شود — فقط همین لحظه
+  // مطمئنیم دقیقاً چه چیزی سالم روی گوشی نوشته شد.
+  if (serverKeys.length > 0) {
+    await writeFlag(wipePendingKey(userId), JSON.stringify(serverKeys));
   }
-
-  // اگر سرور جواب نداد (قطعی شبکه)، نه علامت می‌زنیم نه پیش‌نویس را پاک
-  // می‌کنیم؛ دفعه‌ی بعد دوباره سراغش می‌رویم.
-  if (!serverAnswered) return;
-
+  await writeFlag(migratedKey(userId), new Date().toISOString());
   try {
-    await AsyncStorage.setItem(migratedKey(userId), new Date().toISOString());
     await AsyncStorage.removeItem(legacyDraftKey(userId));
   } catch {
-    // اگر علامت ثبت نشد، دفعه‌ی بعد دوباره مهاجرت می‌شود — که بی‌ضرر است،
-    // چون مقادیر فعلیِ گوشی برنده‌اند.
+    // بی‌اهمیت: دفعه‌ی بعد هم همان مقدار را می‌دهد و مقدار گوشی برنده است
   }
+}
+
+/**
+ * خالی کردن نسخه‌ی سرور، بعد از اینکه داده سالم روی گوشی نشست.
+ *
+ * تا وقتی موفق نشود هر بار تکرار می‌شود، چون هدف این است که داده‌ی سمت سرور
+ * واقعاً به صفر برسد — همان عددی که نشان می‌دهد همه‌ی نصب‌ها مهاجرت کرده‌اند
+ * و می‌شود جدول را حذف کرد.
+ *
+ * هیچ‌وقت چیزی را از سرور پاک نمی‌کند که روی گوشی نباشد.
+ */
+async function clearServerCopy(userId: string): Promise<void> {
+  if (await readFlag(wipedKey(userId))) return;
+  if (!(await readFlag(migratedKey(userId)))) return;
+
+  const local = await readLocalHoldings(userId);
+  let keys: string[] | null = null;
+
+  const pending = await readFlag(wipePendingKey(userId));
+  if (pending) {
+    try {
+      const parsed = JSON.parse(pending) as string[];
+      if (Array.isArray(parsed)) keys = parsed;
+    } catch {
+      keys = null;
+    }
+  }
+
+  if (keys === null) {
+    // کسانی که با نسخه‌ی قبلیِ همین به‌روزرسانی مهاجرت کرده‌اند و فهرستی
+    // ذخیره نشده: از خود سرور می‌پرسیم چه چیزی مانده.
+    try {
+      const summary = await fetchServerHoldings();
+      keys = keysWithData(summary.items);
+    } catch (err) {
+      const status = (err as { response?: { status?: number } })?.response?.status;
+      if (status === 404) await writeFlag(wipedKey(userId), "gone");
+      return;
+    }
+    // محافظ: چیزی که روی گوشی نیست از سرور پاک نمی‌شود
+    const missing = keys.filter((key) => !(key in local));
+    if (missing.length > 0) return;
+  }
+
+  if (keys.length > 0) {
+    try {
+      await wipeServerHoldings(keys);
+    } catch (err) {
+      const status = (err as { response?: { status?: number } })?.response?.status;
+      if (status !== 404) return; // شبکه نبود؛ دفعه‌ی بعد
+    }
+  }
+
+  await writeFlag(wipedKey(userId), new Date().toISOString());
+  try {
+    await AsyncStorage.removeItem(wipePendingKey(userId));
+  } catch {
+    // مهم نیست؛ فلگ wiped جلوی تکرار را می‌گیرد
+  }
+}
+
+/** مهاجرت + پاک‌سازی نسخه‌ی سرور. هر دو idempotent و بی‌صدا. */
+export async function migrateServerHoldings(userId: string): Promise<void> {
+  await pullFromServer(userId);
+  await clearServerCopy(userId);
 }
 
 /** دارایی‌های کاربر، بعد از اطمینان از انجام مهاجرت */
