@@ -25,7 +25,7 @@ const STORE_PREFIX = "sekeh_holdings_v1:";
 const storeKey = (userId: string) => `${STORE_PREFIX}${userId}`;
 
 /** عددِ ورودی را به چیزی که ارزش ذخیره کردن دارد تبدیل می‌کند */
-function sanitize(holding: Partial<LocalHolding>): LocalHolding | null {
+export function sanitize(holding: Partial<LocalHolding>): LocalHolding | null {
   const quantity = Number(holding.quantity) || 0;
   const rawBuy = Number(holding.avgBuyPrice) || 0;
   const avgBuyPrice = rawBuy > 0 ? rawBuy : null;
@@ -52,6 +52,18 @@ export async function readLocalHoldings(userId: string): Promise<LocalHoldings> 
     // حافظه‌ی خراب نباید جلوی بالا آمدن داشبورد را بگیرد
     return {};
   }
+}
+
+/**
+ * مثل readLocalHoldings، ولی خطای خواندن را پرتاب می‌کند. برای جایی که «خالی
+ * است» با «نتوانستم بخوانم» فرق دارد: کسی که بر پایه‌ی خواندن چیزی می‌نویسد
+ * نباید یک خطای موقتِ دیسک را خالیِ واقعی بگیرد و داده‌ی کاربر را بسوزاند.
+ */
+export async function readLocalHoldingsStrict(
+  userId: string
+): Promise<LocalHoldings> {
+  const raw = await AsyncStorage.getItem(storeKey(userId));
+  return raw ? normalize(JSON.parse(raw)) : {};
 }
 
 /** true یعنی واقعاً روی دیسک نشست */

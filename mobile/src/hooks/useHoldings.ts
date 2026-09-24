@@ -7,6 +7,7 @@ import {
   loadHoldings,
   writeLocalHoldings,
 } from "../storage/holdings";
+import { restoreHoldingsFromServer } from "../storage/restore";
 import { buildHoldingsSummary } from "../utils/holdingsSummary";
 
 export const ASSETS_QUERY_KEY = ["assets"];
@@ -37,7 +38,14 @@ export function useHoldings() {
   const holdingsQuery = useQuery({
     queryKey: localHoldingsKey(user?.id),
     // خواندن از دیسک است، نه شبکه؛ کهنه نمی‌شود چون تنها نویسنده‌اش خود اپ است
-    queryFn: () => loadHoldings(user!.id),
+    queryFn: async () => {
+      // موقت — تنها جایی که این کوئری به شبکه می‌رسد. باید قبل از خواندنِ دیسک
+      // باشد، نه بعدش: داشبورد فرم را فقط یک‌بار از روی این نتیجه پر می‌کند و
+      // اگر بازیابی دیرتر برسد، کاربر تا بستنِ اپ صفر می‌بیند. حذفش:
+      // CLAUDE.md، بخش «بازیابی‌ی موقت».
+      await restoreHoldingsFromServer(user!.id);
+      return loadHoldings(user!.id);
+    },
     enabled: Boolean(user),
     staleTime: Infinity,
   });

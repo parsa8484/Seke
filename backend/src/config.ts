@@ -20,6 +20,10 @@ export const config = {
   downloadDir: path.resolve(
     process.env.DOWNLOAD_DIR ?? path.join(process.cwd(), "downloads")
   ),
+  // پوشه‌ی فایل موقتِ بازیابی‌ی دارایی‌ها (بیرون از گیت) — restoreStore.ts
+  restoreDir: path.resolve(
+    process.env.RESTORE_DIR ?? path.join(process.cwd(), "restore")
+  ),
   corsOrigins: (process.env.CORS_ORIGINS ?? "")
     .split(",")
     .map((s) => s.trim())

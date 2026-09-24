@@ -7,6 +7,7 @@ import { hashPassword } from "../utils/password";
 import { refreshPrices } from "../services/priceService";
 import { TGJU_CATALOG, MARKET_CATEGORY_LABELS } from "../services/tgjuCatalog";
 import { getMarketSnapshot, getSourceHealth } from "../services/tgjuClient";
+import { pendingRestoreUserIds } from "../services/restoreStore";
 
 export const adminRouter = Router();
 adminRouter.use(requireAuth, requireAdmin);
@@ -25,6 +26,18 @@ adminRouter.get("/stats", async (_req, res) => {
     .filter((a) => a.isActive && a.sourceType !== "manual" && a.currentPrice === null)
     .map((a) => ({ key: a.key, label: a.label }));
 
+  // کاربرانی که هنوز اپ را باز نکرده‌اند تا دارایی‌هایشان از سرور به گوشی بیاید.
+  // شمارشِ خودِ کاربران است، نه جمعِ «ارزش» — آن معیار قبلاً اشتباه از آب
+  // درآمد (دارایی بدون قیمت صفر حساب می‌شد). فقط کاربرِ موجود و فعال را می‌شمارد:
+  // حساب حذف/غیرفعال هیچ‌وقت وارد نمی‌شود و عدد را برای همیشه بالا نگه می‌داشت.
+  const pendingIds = pendingRestoreUserIds();
+  const pendingRestores =
+    pendingIds.length === 0
+      ? 0
+      : await prisma.user.count({
+          where: { id: { in: pendingIds }, isActive: true },
+        });
+
   // سلامت منبع قیمت: اگر همه‌ی منابع در دسترس نباشند اینجا false می‌شود
   let tgjuReachable = false;
   let tgjuSymbolCount = 0;
@@ -42,6 +55,7 @@ adminRouter.get("/stats", async (_req, res) => {
   res.json({
     userCount,
     activeUserCount,
+    pendingRestores,
     assetsMissingPrice,
     tgjuReachable,
     tgjuSymbolCount,

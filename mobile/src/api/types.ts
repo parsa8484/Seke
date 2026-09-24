@@ -172,6 +172,8 @@ export interface PriceSourcesHealth {
 export interface AdminStats {
   userCount: number;
   activeUserCount: number;
+  /** کاربرانی که هنوز دارایی‌شان از سرور به گوشی نیامده — موقت، تا حذف بازیابی */
+  pendingRestores: number;
   // آمار دارایی‌ها عمداً نیست: سرور نمی‌داند کسی چه دارد
   assetsMissingPrice: { key: string; label: string }[];
   /** آیا حداقل یکی از منابع قیمت در دسترس است */

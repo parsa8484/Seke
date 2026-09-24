@@ -153,6 +153,13 @@ export default function AdminOverviewScreen() {
           <View style={styles.statsGrid}>
             <StatBox label="کل کاربران" value={String(data!.userCount)} />
             <StatBox label="کاربران فعال" value={String(data!.activeUserCount)} />
+            {/* تا وقتی سرور قدیمی است این فیلد نیست؛ >۰ فقط وقتی کسی مانده */}
+            {data!.pendingRestores > 0 ? (
+              <StatBox
+                label="در انتظار بازیابی دارایی"
+                value={String(data!.pendingRestores)}
+              />
+            ) : null}
             <StatBox
               label="منبع قیمت"
               value={

@@ -6,3 +6,5 @@ dist/
 prisma/dev.db
 prisma/dev.db-journal
 npm-debug.log*
+# فایل موقت بازیابی‌ی دارایی‌ها — داده‌ی شخصی کاربران، هرگز commit نشود
+restore/
