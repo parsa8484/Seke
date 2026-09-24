@@ -64,14 +64,12 @@ export function AssetRow({
       ? colors.danger
       : colors.textMuted;
 
-  // حباب مثبت (بازار گران‌تر از قیمت جهانی) قرمز است، نه سبز — برای خریدار
-  // خبر بدی است، برخلاف سود که سبز است.
   const tone = intrinsic ? bubbleTone(intrinsic) : null;
   const bubbleColor =
     tone === "over"
-      ? colors.danger
-      : tone === "under"
       ? colors.success
+      : tone === "under"
+      ? colors.danger
       : colors.textMuted;
 
   return (

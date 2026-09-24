@@ -19,8 +19,6 @@ import { useAuth } from "../../../../src/context/AuthContext";
 import { spacing } from "../../../../src/theme/colors";
 import { useTheme } from "../../../../src/context/ThemeContext";
 import type { AppColors } from "../../../../src/theme/colors";
-import { formatToman } from "../../../../src/utils/format";
-import { AdminUserHolding } from "../../../../src/api/types";
 
 export default function AdminUserDetailScreen() {
   const { colors } = useTheme();
@@ -94,7 +92,7 @@ export default function AdminUserDetailScreen() {
   function confirmDelete() {
     Alert.alert(
       "حذف کاربر",
-      "این کاربر و تمام دارایی‌های ثبت‌شده‌اش برای همیشه حذف می‌شود. مطمئنی؟",
+      "حساب این کاربر برای همیشه حذف می‌شود و دیگر نمی‌تواند وارد شود. دارایی‌هایش روی گوشی خودش می‌ماند، چون روی سرور ذخیره نمی‌شود. مطمئنی؟",
       [
         { text: "انصراف", style: "cancel" },
         {
@@ -135,9 +133,6 @@ export default function AdminUserDetailScreen() {
         ) : null}
         <AppText style={styles.meta}>
           {data.user.displayName || "بدون نام"}
-        </AppText>
-        <AppText style={styles.meta}>
-          ارزش کل دارایی‌ها: {formatToman(data.totalValue)} تومان
         </AppText>
       </Card>
 
@@ -214,23 +209,13 @@ export default function AdminUserDetailScreen() {
         <LoginHistoryList events={loginHistory ?? []} />
       </Card>
 
-      <AppText style={styles.sectionTitle}>دارایی‌های ثبت‌شده</AppText>
-      {data.holdings.length === 0 ? (
-        <AppText style={styles.empty}>این کاربر هنوز دارایی ثبت نکرده</AppText>
-      ) : (
-        <Card style={styles.holdingsCard}>
-          {data.holdings.map((h: AdminUserHolding) => (
-            <View key={h.assetKey} style={styles.holdingRow}>
-              <AppText style={styles.holdingValue}>
-                {formatToman(h.value)} ت
-              </AppText>
-              <AppText style={styles.holdingLabel}>
-                {h.label} × {h.quantity}
-              </AppText>
-            </View>
-          ))}
-        </Card>
-      )}
+      <AppText style={styles.sectionTitle}>دارایی‌ها</AppText>
+      <Card style={styles.holdingsCard}>
+        <AppText style={styles.empty}>
+          دارایی‌های هر کاربر فقط روی گوشی خودش ذخیره می‌شود و روی سرور وجود
+          ندارد — حتی ادمین هم آن را نمی‌بیند.
+        </AppText>
+      </Card>
 
       {!isSelf ? (
         <PrimaryButton

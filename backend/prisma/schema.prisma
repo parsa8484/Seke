@@ -23,7 +23,6 @@ model User {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  holdings    Holding[]
   loginEvents LoginEvent[]
   priceAlerts PriceAlert[]
   pushTokens  PushToken[]
@@ -67,31 +66,17 @@ model Asset {
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 
-  holdings      Holding[]
   priceHistory  PriceHistory[]
   priceAlerts   PriceAlert[]
 
   @@map("assets")
 }
 
-// تعداد/مقداری که هر کاربر از هر دارایی داره
-model Holding {
-  id        String   @id @default(cuid())
-  userId    String
-  assetId   String
-  quantity  Float    @default(0)
-  // میانگین قیمت خرید هر واحد به تومان. null یعنی کاربر ثبت نکرده و
-  // سود/زیان براش محاسبه نمی‌شه (صفر گذاشتن یعنی «رایگان گرفتم» که غلطه).
-  avgBuyPrice Float?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
-  asset Asset @relation(fields: [assetId], references: [id], onDelete: Cascade)
-
-  @@unique([userId, assetId])
-  @@map("holdings")
-}
+// دارایی‌های کاربر اینجا نیست — عمداً.
+//
+// تعداد و قیمت خریدِ هر نفر داده‌ی مالی شخصی است و فقط روی گوشی خودش ذخیره
+// می‌شود (mobile/src/storage/holdings.ts). سرور نه آن را می‌بیند، نه نگه
+// می‌دارد، و پنل ادمین هم پرتفوی کسی را نشان نمی‌دهد.
 
 // تاریخچه‌ی قیمت‌ها (برای نمودار روند در آینده)
 model PriceHistory {

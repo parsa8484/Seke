@@ -55,7 +55,7 @@ export default function AdminUsersScreen() {
           <View style={styles.rowInfo}>
             <AppText style={styles.email}>{item.email}</AppText>
             <AppText style={styles.meta}>
-              {item.displayName || "بدون نام"} · {item.holdingsCount} دارایی ثبت‌شده
+              {item.displayName || "بدون نام"}
             </AppText>
           </View>
           <View style={styles.badges}>

@@ -172,8 +172,7 @@ export interface PriceSourcesHealth {
 export interface AdminStats {
   userCount: number;
   activeUserCount: number;
-  holdingCount: number;
-  totalHoldingsValue: number;
+  // آمار دارایی‌ها عمداً نیست: سرور نمی‌داند کسی چه دارد
   assetsMissingPrice: { key: string; label: string }[];
   /** آیا حداقل یکی از منابع قیمت در دسترس است */
   tgjuReachable: boolean;
@@ -198,15 +197,6 @@ export interface AdminUser {
   role: Role;
   isActive: boolean;
   createdAt: string;
-  holdingsCount: number;
-}
-
-export interface AdminUserHolding {
-  assetKey: string;
-  label: string;
-  quantity: number;
-  price: number | null;
-  value: number;
 }
 
 export interface AdminUserDetail {
@@ -219,8 +209,6 @@ export interface AdminUserDetail {
     isActive: boolean;
     createdAt: string;
   };
-  holdings: AdminUserHolding[];
-  totalValue: number;
 }
 
 // brsapi حذف شد — اندپوینتش از کار افتاد و همه‌چیز از tgju می‌آید

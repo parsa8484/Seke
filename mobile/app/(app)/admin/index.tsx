@@ -154,10 +154,6 @@ export default function AdminOverviewScreen() {
             <StatBox label="کل کاربران" value={String(data!.userCount)} />
             <StatBox label="کاربران فعال" value={String(data!.activeUserCount)} />
             <StatBox
-              label="ارزش کل دارایی‌های ثبت‌شده"
-              value={`${formatToman(data!.totalHoldingsValue)} ت`}
-            />
-            <StatBox
               label="منبع قیمت"
               value={
                 data!.tgjuReachable

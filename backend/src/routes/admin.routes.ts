@@ -13,19 +13,13 @@ adminRouter.use(requireAuth, requireAdmin);
 
 // ----------------------------- آمار کلی -----------------------------
 adminRouter.get("/stats", async (_req, res) => {
-  const [userCount, activeUserCount, holdingCount, assets, holdings] =
-    await Promise.all([
-      prisma.user.count(),
-      prisma.user.count({ where: { isActive: true } }),
-      prisma.holding.count(),
-      prisma.asset.findMany(),
-      prisma.holding.findMany({ include: { asset: true } }),
-    ]);
-
-  const totalHoldingsValue = holdings.reduce(
-    (sum, h) => sum + h.quantity * (h.asset.currentPrice ?? 0),
-    0
-  );
+  // دارایی‌های کاربرها اینجا نیست و نباید باشد — روی خود دستگاه‌ها ذخیره
+  // می‌شود، پس نه تعدادشان شمرده می‌شود نه ارزششان جمع زده می‌شود.
+  const [userCount, activeUserCount, assets] = await Promise.all([
+    prisma.user.count(),
+    prisma.user.count({ where: { isActive: true } }),
+    prisma.asset.findMany(),
+  ]);
 
   const assetsMissingPrice = assets
     .filter((a) => a.isActive && a.sourceType !== "manual" && a.currentPrice === null)
@@ -48,8 +42,6 @@ adminRouter.get("/stats", async (_req, res) => {
   res.json({
     userCount,
     activeUserCount,
-    holdingCount,
-    totalHoldingsValue,
     assetsMissingPrice,
     tgjuReachable,
     tgjuSymbolCount,
@@ -95,7 +87,6 @@ adminRouter.post("/prices/refresh", async (_req, res) => {
 adminRouter.get("/users", async (_req, res) => {
   const users = await prisma.user.findMany({
     orderBy: { createdAt: "desc" },
-    include: { _count: { select: { holdings: true } } },
   });
   res.json({
     users: users.map((u) => ({
@@ -106,27 +97,17 @@ adminRouter.get("/users", async (_req, res) => {
       role: u.role,
       isActive: u.isActive,
       createdAt: u.createdAt,
-      holdingsCount: u._count.holdings,
     })),
   });
 });
 
 adminRouter.get("/users/:id", async (req, res) => {
+  // عمداً بدون دارایی‌ها: پرتفوی کاربر روی گوشی خودش است و ادمین هم آن را
+  // نمی‌بیند. همین باعث شد جدول holdings حذف شود.
   const user = await prisma.user.findUnique({
     where: { id: req.params.id },
-    include: { holdings: { include: { asset: true } } },
   });
   if (!user) return res.status(404).json({ error: "کاربر پیدا نشد" });
-
-  const holdings = user.holdings
-    .filter((h) => h.quantity > 0)
-    .map((h) => ({
-      assetKey: h.asset.key,
-      label: h.asset.label,
-      quantity: h.quantity,
-      price: h.asset.currentPrice,
-      value: h.quantity * (h.asset.currentPrice ?? 0),
-    }));
 
   res.json({
     user: {
@@ -138,8 +119,6 @@ adminRouter.get("/users/:id", async (req, res) => {
       isActive: user.isActive,
       createdAt: user.createdAt,
     },
-    holdings,
-    totalValue: holdings.reduce((s, h) => s + h.value, 0),
   });
 });
 
