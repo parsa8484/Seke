@@ -8,6 +8,7 @@ import { pricesRouter } from "./routes/prices.routes";
 import { marketRouter } from "./routes/market.routes";
 import { alertsRouter } from "./routes/alerts.routes";
 import { adminRouter } from "./routes/admin.routes";
+import { downloadRouter } from "./routes/download.routes";
 import { startPriceRefreshLoop } from "./services/priceService";
 
 const app = express();
@@ -35,6 +36,7 @@ app.use("/api/prices", pricesRouter);
 app.use("/api/market", marketRouter);
 app.use("/api/alerts", alertsRouter);
 app.use("/api/admin", adminRouter);
+app.use(downloadRouter);
 
 app.use((_req, res) => res.status(404).json({ error: "مسیر پیدا نشد" }));
 

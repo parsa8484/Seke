@@ -1,4 +1,5 @@
 import "dotenv/config";
+import path from "path";
 
 function required(name: string, fallback?: string): string {
   const v = process.env[name] ?? fallback;
@@ -15,6 +16,10 @@ export const config = {
   jwtExpiresIn: process.env.JWT_EXPIRES_IN ?? "30d",
   brsapiKey: process.env.BRSAPI_KEY ?? "",
   priceRefreshMinutes: Number(process.env.PRICE_REFRESH_MINUTES ?? 15),
+  // پوشه‌ی فایل‌های APK که از /app سرو می‌شوند (بیرون از گیت نگه داشته می‌شود)
+  downloadDir: path.resolve(
+    process.env.DOWNLOAD_DIR ?? path.join(process.cwd(), "downloads")
+  ),
   corsOrigins: (process.env.CORS_ORIGINS ?? "")
     .split(",")
     .map((s) => s.trim())
