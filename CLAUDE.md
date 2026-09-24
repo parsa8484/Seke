@@ -90,7 +90,7 @@ Every login attempt, successful or not, is written to `LoginEvent`. Recording is
 **Biometric quick-login.** Every successful login also writes the JWT to a second SecureStore key (`sekeh_biometric_token`) that `signOut` deliberately does *not* clear, so the login screen can offer "ورود با اثر انگشت". Consequences to keep in mind: the token stays on the device for up to its 30-day expiry after logout, and because `disableDeviceFallback: false`, the phone's own PIN/pattern also unlocks it — the same tradeoff banking apps make. Settings' logout asks whether to keep it, and `forgetDevice()` clears it. If a restored token is rejected by `/api/auth/me` (expired, or `isActive: false`), both keys are wiped and the user is sent back to password login.
 
 ### Backend request flow
-`src/index.ts` wires Express + routes. Routes: `auth.routes.ts` (register/login/me, change-password, profile PATCH, login-history), `prices.routes.ts` (public asset+price list, plus `GET /:key/history` for trend charts), `market.routes.ts` (public full tgju price list + `GET /history/:symbol`), `alerts.routes.ts` (price-alert CRUD + Expo push-token registration — still server-side, and now the only place any user data lives on the server), `admin.routes.ts` (stats, user CRUD, password reset, per-user login history, asset catalog CRUD, tgju symbol picker, manual price set, manual refresh trigger — all zod-validated, all behind `requireAdmin`). Self-modification (an admin changing their own role/isActive) is explicitly blocked in the admin routes — but an admin *may* reset any password including their own.
+`src/index.ts` wires Express + routes. Routes: `auth.routes.ts` (register/login/me, change-password, profile PATCH, login-history), `prices.routes.ts` (public asset+price list, plus `GET /:key/history` for trend charts), `market.routes.ts` (public full tgju price list + `GET /history/:symbol`), `alerts.routes.ts` (price-alert CRUD + Expo push-token registration — still server-side, and now the only place any user data lives on the server), `admin.routes.ts` (stats, user CRUD, password reset, per-user login history, asset catalog CRUD, tgju symbol picker, manual price set, manual refresh trigger — all zod-validated, all behind `requireAdmin`), `download.routes.ts` (public, mounted at the root: `/app` is an HTML landing page, `/app/download` redirects to the newest build, `/download/:file` serves it). APKs come from `DOWNLOAD_DIR` (default `backend/downloads`), which is kept **outside git** — a missing directory just yields an empty list rather than an error, and `:file` is reduced to a basename before it is opened, so `..` paths 404. Self-modification (an admin changing their own role/isActive) is explicitly blocked in the admin routes — but an admin *may* reset any password including their own.
 
 ### Holdings live on the device, not on the server
 
@@ -183,6 +183,8 @@ src/
 **Dates and numbers must never go through `Intl`.** Hermes on Android ships without full ICU, so `Intl.DateTimeFormat("fa-IR")` silently returns *Gregorian* dates and `Intl.NumberFormat("fa-IR")` returns Latin digits. `src/utils/jalali.ts` does the conversion itself (the standard jalaali breaks-table algorithm — note it needs **truncating** `div`/`mod`, not `Math.floor`, or every date lands a year off), and `src/utils/format.ts` groups thousands by hand. When tgju already hands us a Jalali date string, `formatTgjuJalali*` just prettifies it rather than round-tripping.
 Server state (queries/mutations) goes through `@tanstack/react-query`; don't add ad-hoc `useEffect` fetching for anything the admin panel or dashboard already has a query for.
 
+**`useQuery`'s `data` resolves to `any` here, so `tsc` does not guard API shapes.** Removing a field from a response type in `src/api/types.ts` compiles fine at every `useQuery` call site, and the screen then renders `undefined` at runtime. Three admin screens were in exactly that state after the holdings removal and had to be found by grepping the field names. When you change an API shape, grep for every field you touched instead of trusting a clean type-check. (Calling the `src/api/*` function directly *is* checked — that is how the discrepancy was confirmed.)
+
 **Theming**: colors are dynamic — read them from `useTheme()`, never by importing the `colors` object (that export is a dark-only compatibility shim; using it silently breaks light mode). Screens that need themed `StyleSheet`s define `const makeStyles = (colors: AppColors) => StyleSheet.create({...})` at module scope and call `const styles = makeStyles(colors)` inside the component.
 
 Adding a route under `app/` requires Expo Router's generated types (`.expo/types/router.d.ts`) to be refreshed before `tsc --noEmit` passes; they regenerate when Metro/EAS runs.
@@ -207,17 +209,23 @@ Backend runs on a Windows VPS at `188.209.153.164:4000` (plain HTTP, no domain/T
 
 ```powershell
 cd C:\apps\Seke
-git checkout -- backend/package.json   # npm approve-scripts edits this; it blocks git pull
+git status --short                      # if backend/package.json is modified: git checkout -- backend/package.json
 git pull
 cd backend
-npm install
+pm2 stop sekeh-api                      # everything DB/build related happens while it is down
 npx prisma migrate deploy
-pm2 stop sekeh-api                      # frees query_engine-windows.dll.node
 npx prisma generate                     # REQUIRED — see below, it does not happen on its own
 npm run build
-npx prisma db seed
 pm2 start sekeh-api                     # never `pm2 restart all` — see PM2 note above
 ```
+
+`npm install` and `npx prisma db seed` are **not** unconditional steps. Diff first (`git diff <deployed sha>..HEAD -- backend/`): run `npm install` only if `backend/package.json` changed, and the seed only if `prisma/seed.ts` did. Skipping a no-op `npm install` also skips the `approve-scripts` trap below entirely. The 2026-09-24 deploy needed neither and went through clean.
+
+`pm2 stop` comes **before** `migrate deploy`, not after. A destructive migration (`DROP TABLE`) against the SQLite file while the app holds a connection can hit `SQLITE_BUSY`; with the process down there is nothing to race, and the freed ~130 MB matters on a 4 GB box shared with sarkhati. It also satisfies the `EPERM` constraint below.
+
+Take a copy of the DB before any destructive migration (`copy prisma\dev.db prisma\dev.db.before-drop`) — **and delete it once the deploy is proven**, or the data the migration removed is still sitting on the server in that file.
+
+**Verify from outside the box, not from it.** `curl http://188.209.153.164:4000/health` run *on* the VPS fails with "Unable to connect" — the machine does not reach its own public IP. That failure means nothing; check from a different network.
 
 Three recurring snags on that box:
 - `npm approve-scripts` writes an `allowScripts` block into `backend/package.json`, which makes the next `git pull` abort. Discarding the local change (line 2 above) is safe — the already-installed `node_modules` keep working.
