@@ -136,7 +136,8 @@ export default function AdminOverviewScreen() {
     onSuccess: (res) => {
       setRefreshMsg(`${res.updated} قیمت به‌روزرسانی شد`);
       queryClient.invalidateQueries({ queryKey: ["admin-stats"] });
-      queryClient.invalidateQueries({ queryKey: ["holdings-summary"] });
+      // قیمت‌های تازه به داشبورد برسند؛ دارایی‌های کاربر محلی‌اند و دست نمی‌خورند
+      queryClient.invalidateQueries({ queryKey: ["assets"] });
     },
     onError: (err) => setRefreshMsg(extractErrorMessage(err)),
   });

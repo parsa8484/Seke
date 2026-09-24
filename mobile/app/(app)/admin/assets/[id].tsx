@@ -94,7 +94,9 @@ export default function AdminAssetEditScreen() {
   function invalidateAll() {
     queryClient.invalidateQueries({ queryKey: ["admin-assets"] });
     queryClient.invalidateQueries({ queryKey: ["admin-stats"] });
-    queryClient.invalidateQueries({ queryKey: ["holdings-summary"] });
+    // کاتالوگ و قیمت‌هایی که داشبورد می‌خواند (دارایی‌های کاربر محلی‌اند و
+    // اصلاً از سرور نمی‌آیند، پس چیزی برای باطل کردن ندارند)
+    queryClient.invalidateQueries({ queryKey: ["assets"] });
   }
 
   const saveMutation = useMutation({

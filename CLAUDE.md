@@ -90,27 +90,40 @@ Every login attempt, successful or not, is written to `LoginEvent`. Recording is
 **Biometric quick-login.** Every successful login also writes the JWT to a second SecureStore key (`sekeh_biometric_token`) that `signOut` deliberately does *not* clear, so the login screen can offer "ورود با اثر انگشت". Consequences to keep in mind: the token stays on the device for up to its 30-day expiry after logout, and because `disableDeviceFallback: false`, the phone's own PIN/pattern also unlocks it — the same tradeoff banking apps make. Settings' logout asks whether to keep it, and `forgetDevice()` clears it. If a restored token is rejected by `/api/auth/me` (expired, or `isActive: false`), both keys are wiped and the user is sent back to password login.
 
 ### Backend request flow
-`src/index.ts` wires Express + routes. Routes: `auth.routes.ts` (register/login/me, change-password, profile PATCH, login-history), `prices.routes.ts` (public asset+price list, plus `GET /:key/history` for trend charts), `market.routes.ts` (public full tgju price list + `GET /history/:symbol`), `holdings.routes.ts` (authenticated per-user quantities *and buy prices*, bulk PUT, plus `GET /history` for the portfolio-value chart), `alerts.routes.ts` (price-alert CRUD + Expo push-token registration), `admin.routes.ts` (stats, user CRUD, password reset, per-user login history, asset catalog CRUD, tgju symbol picker, manual price set, manual refresh trigger — all zod-validated, all behind `requireAdmin`). Self-modification (an admin changing their own role/isActive) is explicitly blocked in the admin routes — but an admin *may* reset any password including their own.
+`src/index.ts` wires Express + routes. Routes: `auth.routes.ts` (register/login/me, change-password, profile PATCH, login-history), `prices.routes.ts` (public asset+price list, plus `GET /:key/history` for trend charts), `market.routes.ts` (public full tgju price list + `GET /history/:symbol`), `holdings.routes.ts` (**deprecated** — the app no longer writes to it; only `GET /summary` is still called, once per install, by the migration described below. Delete the route, `Holding`, and the mobile `api/holdings.ts` together once every install has the update), `alerts.routes.ts` (price-alert CRUD + Expo push-token registration — still server-side, and still the one place user data lives on the server), `admin.routes.ts` (stats, user CRUD, password reset, per-user login history, asset catalog CRUD, tgju symbol picker, manual price set, manual refresh trigger — all zod-validated, all behind `requireAdmin`). Self-modification (an admin changing their own role/isActive) is explicitly blocked in the admin routes — but an admin *may* reset any password including their own.
+
+### Holdings live on the device, not on the server
+
+**A user's quantities and buy prices never leave their phone.** The server is an auth + market-price service; it does not know what anyone owns. Login/register/admin stay server-side, and so does the asset catalog and every price — those are public market data with nothing personal in them.
+
+The pieces:
+
+- `mobile/src/storage/holdings.ts` — `sekeh_holdings_v1:<userId>` in AsyncStorage, `{ [assetKey]: { quantity, avgBuyPrice } }`. Entries that are 0/empty on both fields are dropped rather than stored, so a cleared field really is "not recorded".
+- `mobile/src/hooks/useHoldings.ts` — two independent queries: `["assets"]` (server, `GET /api/prices`, 60s stale) and `["local-holdings", userId]` (disk, `staleTime: Infinity` because the app is the only writer). `buildHoldingsSummary` joins them into the exact `HoldingsSummary` shape the old endpoint returned, so the dashboard's render code and the alerts screen didn't have to change. Saving is `setQueryData` then a disk write, never a request.
+- `mobile/src/utils/holdingsSummary.ts` and `mobile/src/utils/portfolioHistory.ts` — line-for-line ports of the math that used to run in `holdings.routes.ts`.
+
+**Migration (temporary, delete after everyone has the update).** `migrateServerHoldings` pulls the user's old server-side holdings into local storage once, on first launch after the update. Four rules keep it from eating data: it retries on every launch until the server actually answers (an offline first launch must not count); whatever is already on the phone always wins over the server copy; the old `sekeh_holdings_draft_v1:<userId>` draft outranks the server value (it means "typed but never uploaded") and is imported even when the server is unreachable; and a 404 marks the migration done, because it means `/api/holdings` has been removed. `mobile/src/api/holdings.ts` exists only for this and goes away with the endpoint.
+
+Consequences that are the point, not bugs: no sync between devices, and uninstalling loses the data. The user explicitly chose this over a backup/restore feature.
 
 ### Profit/loss
-`Holding.avgBuyPrice` is nullable on purpose: null means "not recorded" and the asset is excluded from profit math entirely. Storing 0 would mean "acquired for free" and would poison the totals, so the API and the app both coerce empty/zero input to null. The dashboard computes profit live from the in-progress form values (not the saved ones) so the user sees the result before pressing save; the server returns the same fields for the saved state.
+`avgBuyPrice` is nullable on purpose: null means "not recorded" and the asset is excluded from profit math entirely. Storing 0 would mean "acquired for free" and would poison the totals, so the storage layer and the form both coerce empty/zero input to null. The dashboard computes profit live from the in-progress form values (not the saved ones) so the user sees the result before it settles.
 
 ### Auto-save on the dashboard
 
-Quantities and buy prices save themselves — the "ذخیره و محاسبه" button is now only a manual trigger, kept because users expect it. Two layers, because either one alone loses data:
+Quantities and buy prices save themselves — the "ذخیره و محاسبه" button is only a manual trigger, kept because users expect it. Saving is now a local write, so the machinery that used to guard the network round-trip (`editVersionRef`, `savingRef`/`pendingRef`, the separate draft layer) is gone: there is no in-flight window for a keystroke to race against.
 
-- **Debounced server save** (`AUTOSAVE_DELAY`, 1.2s of typing silence) plus a forced flush on `AppState` leaving `active` and on screen unmount. `flushSave` reads the form from `formRef`, not from state — a timer or an `AppState` listener holds a stale closure and would otherwise POST the values from whenever it was registered.
-- **A local draft** (`sekeh_holdings_draft_v1:<userId>` in AsyncStorage) written on every keystroke with no debounce, so a kill or an offline device loses nothing. On load it is merged over the server values, keyed per asset, and any difference marks the form dirty and triggers an immediate save; the draft is deleted only after the server confirms. Keys no longer in the catalog are dropped rather than resurrected.
+What remains: `AUTOSAVE_DELAY` (800ms of typing silence) before the commit, plus a forced flush on `AppState` leaving `active` and on screen unmount. The delay is there to keep every keystroke from re-running the portfolio-history chart, not to batch requests. `flushSave` reads the form from `formRef`, not from state — a timer or an `AppState` listener holds a stale closure and would otherwise write the values from whenever it was registered. `hydratedRef` fills the form from saved values exactly once; a price refetch must not overwrite what the user is typing.
 
-`editVersionRef` guards the race where the user types *during* an in-flight save: the response only clears the dirty flag if the version is unchanged, otherwise the newer keystrokes would be marked saved and then overwritten by the refetch. `savingRef`/`pendingRef` serialize overlapping saves into one loop instead of racing PUTs.
+### Portfolio value over time (computed on the phone)
 
-### Portfolio value over time (`GET /api/holdings/history`)
+There is **no snapshot table** and deliberately so. `buildPortfolioHistory` multiplies the user's *current* quantities by each asset's *historical* daily close. Semantics: "what would the holdings you have today have been worth back then" — not a real transaction ledger, because storage keeps a quantity, not a dated buy/sell history. The payoff is that a brand-new user gets a year of real curve immediately instead of waiting for snapshots to accumulate.
 
-There is **no snapshot table** and deliberately so. The endpoint multiplies the user's *current* quantities by each asset's *historical* daily close, reusing the same 30-min-cached tgju history the per-asset trend charts use. Semantics: "what would the holdings you have today have been worth back then" — not a real transaction ledger, because `Holding` stores a quantity, not a dated buy/sell history. The payoff is that a brand-new user gets a year of real curve immediately instead of waiting for a `PortfolioSnapshot` table to fill up, and it costs no migration (which matters given the `prisma generate` deploy footgun below).
+It calls `GET /api/prices/:key/history` once per owned asset (typically 3–6, all served from the server's 30-min tgju cache) instead of the one server-side call it replaced — the server can't aggregate a portfolio it no longer knows about. The unit is already applied server-side, so the client just sums.
 
-The time axis is the union of every asset's trading days (symbols have different holidays), capped at the requested range. Each asset carries its last known close forward across gaps and backfills before its first data point. Assets with no history at all — manual ones, or a fetch that failed — are held flat at `currentPrice` and reported in `missingHistory` so the app can tell the user the chart is partial rather than quietly drawing a wrong line. `Asset.priceUnit` overrides the catalog unit here exactly as it does in `priceService`.
+The time axis is the union of every asset's trading days (symbols have different holidays), capped at the requested range. Each asset carries its last known close forward across gaps. Assets with no history at all — manual ones, or a fetch that failed — are held flat at `currentPrice` and reported in `missingHistory` so the app can tell the user the chart is partial rather than quietly drawing a wrong line.
 
-The chart reads *saved* holdings, so it's invalidated on save (`["portfolio-history"]`) and gated on `items.some(i => i.quantity > 0)` rather than on the in-progress form values.
+The chart reads *saved* holdings: its query key carries an `assetKey:quantity` signature, so it recomputes when a quantity settles rather than on every keystroke.
 
 ### CSV export
 
@@ -145,7 +158,10 @@ app/
       users/index.tsx, users/[id].tsx   list/detail, role & active toggles, password reset, login history, delete
       assets/index.tsx, assets/[id].tsx  catalog CRUD, tgju symbol picker, manual price entry, active toggle, delete
 src/
-  api/                    axios client + per-domain API functions (auth, holdings, market, alerts, admin) + shared types.ts
+  api/                    axios client + per-domain API functions (auth, prices, market, alerts, admin) + shared types.ts
+                           (holdings.ts is the migration-only leftover, see "Holdings live on the device")
+  storage/holdings.ts      the user's quantities/buy prices in AsyncStorage — the only copy that exists
+  hooks/useHoldings.ts     joins the server catalog with local holdings into the old HoldingsSummary shape
   context/AuthContext.tsx  token persistence via expo-secure-store; exposes `isAdmin`, `refreshUser`,
                            and the biometric quick-login pair (`hasRememberedSession`, `signInWithRememberedSession`)
   context/ThemeContext.tsx dark/light/system preference, persisted via AsyncStorage
@@ -155,6 +171,8 @@ src/
   components/              shared UI (PrimaryButton has a "danger" variant; DonutChart, LineChart, LockScreen)
   utils/jalali.ts          Gregorian→Jalali conversion + Persian formatting
   utils/csv.ts             holdings → CSV (BOM + Latin digits, see "CSV export")
+  utils/holdingsSummary.ts catalog + local holdings → totals/profit (was GET /api/holdings/summary)
+  utils/portfolioHistory.ts per-asset history → portfolio curve (was GET /api/holdings/history)
   utils/exportFile.ts      saves a text file via Android SAF, Share.share fallback
   theme/colors.ts          dark + light palettes, spacing/radius/typography tokens, chart palette
 ```

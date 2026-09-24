@@ -19,7 +19,7 @@ import {
   fetchAlerts,
   updateAlert,
 } from "../../../src/api/alerts";
-import { fetchHoldingsSummary } from "../../../src/api/holdings";
+import { useHoldings } from "../../../src/hooks/useHoldings";
 import { extractErrorMessage } from "../../../src/api/client";
 import { registerForPushNotifications } from "../../../src/services/notifications";
 import { useTheme } from "../../../src/context/ThemeContext";
@@ -51,16 +51,12 @@ export default function AlertsScreen() {
     queryKey: ["alerts"],
     queryFn: fetchAlerts,
   });
-  const { data: summary } = useQuery({
-    queryKey: ["holdings-summary"],
-    queryFn: fetchHoldingsSummary,
-  });
+  const { items } = useHoldings();
 
   // فقط دارایی‌هایی که قیمت آنلاین دارن قابل هشدار گذاشتنن
   const assets = useMemo<HoldingItem[]>(
-    () =>
-      (summary?.items ?? []).filter((i: HoldingItem) => i.price !== null),
-    [summary]
+    () => items.filter((i: HoldingItem) => i.price !== null),
+    [items]
   );
 
   // ثبت توکن پوش همون بار اولی که کاربر وارد این صفحه می‌شه

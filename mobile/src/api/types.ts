@@ -21,6 +21,22 @@ export interface LoginEvent {
   createdAt: string;
 }
 
+/**
+ * یک ردیف از کاتالوگ دارایی‌ها (خروجی `GET /api/prices`).
+ *
+ * این داده‌ی عمومی بازار است و هیچ ربطی به کاربر ندارد — تعداد و قیمت خرید
+ * روی خود گوشی نگه‌داری می‌شود (src/storage/holdings.ts).
+ */
+export interface CatalogAsset {
+  key: string;
+  category: string;
+  label: string;
+  unit: string;
+  sourceType: string;
+  currentPrice: number | null;
+  priceUpdatedAt: string | null;
+}
+
 export interface HoldingItem {
   assetKey: string;
   category: "coin" | "gold" | "fund" | "currency" | "crypto" | "manual" | string;
