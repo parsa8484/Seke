@@ -1,5 +1,9 @@
 import { fetchAssetHistory } from "../api/prices";
 import { HoldingItem, PortfolioHistory } from "../api/types";
+import {
+  PortfolioSeries,
+  aggregatePortfolioSeries,
+} from "./portfolioSeries";
 
 /**
  * روند ارزش کل پرتفوی — همان محاسبه‌ای که قبلاً `GET /api/holdings/history`
@@ -11,7 +15,8 @@ import { HoldingItem, PortfolioHistory } from "../api/types";
  *
  * تفاوت با قبل فقط در جای اجراست: به‌جای یک درخواست، برای هر دارایی‌ای که
  * تعدادش بیشتر از صفر است یک بار `/api/prices/:key/history` صدا زده می‌شود
- * (معمولاً ۳ تا ۶ تا) که همگی از کش ۳۰ دقیقه‌ای سرور می‌آیند.
+ * (معمولاً ۳ تا ۶ تا) که همگی از کش ۳۰ دقیقه‌ای سرور می‌آیند. خودِ جمع زدن در
+ * `portfolioSeries.ts` است تا بدون شبکه قابل تست باشد.
  */
 export async function buildPortfolioHistory(
   owned: HoldingItem[],
@@ -25,14 +30,14 @@ export async function buildPortfolioHistory(
   // لازم نباشد دوباره میلادی→شمسی حساب شود.
   const jdateByDate = new Map<string, string>();
 
-  const series = await Promise.all(
+  const series: PortfolioSeries[] = await Promise.all(
     owned.map(async (item) => {
-      const base = {
+      const base: PortfolioSeries = {
         label: item.label,
         quantity: item.quantity,
         currentPrice: item.price ?? 0,
-        dates: [] as string[],
-        prices: [] as number[],
+        dates: [],
+        prices: [],
       };
 
       try {
@@ -53,35 +58,5 @@ export async function buildPortfolioHistory(
     })
   );
 
-  const missingHistory = series
-    .filter((s) => s.dates.length === 0)
-    .map((s) => s.label);
-
-  // محور زمان = اجتماع روزهای همه‌ی دارایی‌ها (هر نماد ممکن است تعطیلات
-  // متفاوتی داشته باشد)، آخرین `days` روز.
-  const axis = [...new Set(series.flatMap((s) => s.dates))].sort().slice(-days);
-
-  if (axis.length < 2) {
-    return { days, points: [], assetCount: owned.length, missingHistory };
-  }
-
-  // برای هر دارایی یک اشاره‌گر همراه محور جلو می‌رود؛ اگر آن روز قیمتی ثبت
-  // نشده باشد، آخرین قیمت شناخته‌شده ادامه پیدا می‌کند.
-  const cursors = series.map(() => 0);
-  const points = axis.map((date) => {
-    let value = 0;
-    series.forEach((s, i) => {
-      if (s.dates.length === 0) {
-        value += s.quantity * s.currentPrice;
-        return;
-      }
-      let index = cursors[i];
-      while (index + 1 < s.dates.length && s.dates[index + 1] <= date) index++;
-      cursors[i] = index;
-      value += s.quantity * s.prices[index];
-    });
-    return { date, jdate: jdateByDate.get(date) ?? null, price: value };
-  });
-
-  return { days, points, assetCount: owned.length, missingHistory };
+  return aggregatePortfolioSeries(series, days, jdateByDate);
 }
