@@ -165,8 +165,8 @@ export default function MarketDetailScreen() {
                       Math.abs(intrinsic.bubblePercent) < 0.5
                         ? colors.textMuted
                         : intrinsic.bubble > 0
-                        ? colors.danger
-                        : colors.success,
+                        ? colors.success
+                        : colors.danger,
                   },
                 ]}
               >

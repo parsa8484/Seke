@@ -45,7 +45,7 @@ const SORT_OPTIONS: { key: SortMode; label: string }[] = [
 function bubbleColor(intrinsic: IntrinsicPrice, colors: AppColors): string {
   const tone = bubbleTone(intrinsic);
   if (tone === "flat") return colors.textMuted;
-  return tone === "over" ? colors.danger : colors.success;
+  return tone === "over" ? colors.success : colors.danger;
 }
 
 function priceText(item: MarketItem): string {
