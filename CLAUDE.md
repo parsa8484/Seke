@@ -151,6 +151,10 @@ Client-side only — no endpoint. `src/utils/csv.ts` builds the file from what's
 ### Price alerts & push
 `PriceAlert` rows are evaluated inside `refreshPrices()` (`services/alertService.ts`), only against assets whose price actually changed in that cycle. A fired alert is deactivated (`isActive: false` + `triggeredAt`/`triggeredPrice`) so it doesn't re-notify every 15 minutes; re-enabling it from the app clears the fired state. Push goes through Expo's free `exp.host` service using `PushToken` rows; `DeviceNotRegistered` tickets prune dead tokens. Alert evaluation is wrapped in try/catch — a push failure must never break the price refresh.
 
+**An alert fires on a *crossing*, not on the condition being true.** `refreshPrices` passes `previousPrice` alongside the new one, and only for symbols whose stored number actually differs; `hasCrossed` then requires the previous price to have been on the *other* side of the target. Without that, an alert whose target was already satisfied at creation fired on the very next refresh and pushed “reached X” for something that never happened — and the form made that the default path, because it pre-filled the target with the current price, which satisfies both `>=` and `<=`. The other half of the fix is a guard: `POST`/`PUT /api/alerts` reject a target that is already met (the message quotes the current price) and the screen checks the same thing before it sends, so an alert that could never fire cannot be created in the first place. `previousPrice: null` (an asset's first-ever price) falls back to the plain comparison.
+
+The push payload carries `channelId: "price-alerts"`, matching `PRICE_ALERT_CHANNEL_ID` in `mobile/src/services/notifications.ts`. If those two strings drift apart, Android drops the notification into its fallback “Miscellaneous” channel and the sound/vibration/importance configured on the real channel never apply. Tapping the notification opens the alerts screen — `(app)/_layout.tsx` watches `useLastNotificationResponse()`, which covers both a cold start and a resume.
+
 ### Mobile app structure (Expo Router, file-based)
 ```
 app/

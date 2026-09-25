@@ -1,5 +1,6 @@
-import React from "react";
-import { Redirect, Tabs } from "expo-router";
+import React, { useEffect, useRef } from "react";
+import { Redirect, Tabs, router } from "expo-router";
+import * as Notifications from "expo-notifications";
 import { View, ActivityIndicator, StyleSheet } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useAuth } from "../../src/context/AuthContext";
@@ -8,6 +9,23 @@ import { useTheme } from "../../src/context/ThemeContext";
 export default function AppLayout() {
   const { token, isLoading, isAdmin } = useAuth();
   const { colors } = useTheme();
+
+  // زدن روی نوتیفیکیشنِ هشدار قیمت باید صفحه‌ی هشدارها را باز کند. بدون این،
+  // نوتیف فقط اپ را باز می‌کرد و کاربر همان‌جایی می‌ماند که قبلاً بود — با
+  // اینکه سرور از اول assetKey را در data می‌فرستاد.
+  // useLastNotificationResponse هم حالتِ «اپ بسته بود» را پوشش می‌دهد هم
+  // «اپ در پس‌زمینه بود»، پس به دو لیسنر جدا نیازی نیست.
+  const lastResponse = Notifications.useLastNotificationResponse();
+  const handledNotificationRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    // تا وقتی توکن نیامده، تب‌ها هنوز mount نشده‌اند و ناوبری جایی نمی‌رود
+    if (!lastResponse || !token || isLoading) return;
+    const id = lastResponse.notification.request.identifier;
+    if (handledNotificationRef.current === id) return;
+    handledNotificationRef.current = id;
+    router.push("/(app)/alerts");
+  }, [lastResponse, token, isLoading]);
 
   if (isLoading) {
     return (

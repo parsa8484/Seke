@@ -2,6 +2,7 @@ import { Router } from "express";
 import { z } from "zod";
 import { prisma } from "../db";
 import { requireAuth, AuthedRequest } from "../middleware/auth";
+import { alreadyMetMessage, isConditionMet } from "../services/alertService";
 
 export const alertsRouter = Router();
 alertsRouter.use(requireAuth);
@@ -67,6 +68,21 @@ alertsRouter.post("/", async (req: AuthedRequest, res) => {
   });
   if (!asset) return res.status(404).json({ error: "دارایی پیدا نشد" });
 
+  // هدفی که از قبل محقق است هشدار نیست: در اولین رفرش شلیک می‌شد و نوتیفِ
+  // «به فلان قیمت رسید» برای اتفاقی می‌آمد که نیفتاده بود. جلوی ساختنش را
+  // همین‌جا می‌گیریم تا کاربر بفهمد چرا، نه اینکه هشدارش بی‌صدا هیچ‌وقت نزند.
+  if (
+    isConditionMet(
+      parsed.data.direction,
+      parsed.data.targetPrice,
+      asset.currentPrice
+    )
+  ) {
+    return res.status(400).json({
+      error: alreadyMetMessage(parsed.data.direction, asset.currentPrice!),
+    });
+  }
+
   const alert = await prisma.priceAlert.create({
     data: {
       userId,
@@ -92,6 +108,7 @@ alertsRouter.put("/:id", async (req: AuthedRequest, res) => {
   }
   const existing = await prisma.priceAlert.findUnique({
     where: { id: req.params.id },
+    include: withAsset,
   });
   if (!existing || existing.userId !== req.userId) {
     return res.status(404).json({ error: "هشدار پیدا نشد" });
@@ -99,6 +116,20 @@ alertsRouter.put("/:id", async (req: AuthedRequest, res) => {
 
   // فعال‌کردن دوباره‌ی یک هشدار شلیک‌شده، سابقه‌ی شلیک را پاک می‌کند
   const reactivating = parsed.data.isActive === true && !existing.isActive;
+
+  // همان گاردِ ساخت، روی نتیجه‌ی ویرایش: هشداری که بعد از تغییر هم فعال
+  // می‌ماند نباید هدفِ از-قبل-محقق داشته باشد.
+  const nextDirection = parsed.data.direction ?? existing.direction;
+  const nextTarget = parsed.data.targetPrice ?? existing.targetPrice;
+  const willBeActive = parsed.data.isActive ?? existing.isActive;
+  if (
+    willBeActive &&
+    isConditionMet(nextDirection, nextTarget, existing.asset.currentPrice)
+  ) {
+    return res.status(400).json({
+      error: alreadyMetMessage(nextDirection, existing.asset.currentPrice!),
+    });
+  }
 
   const alert = await prisma.priceAlert.update({
     where: { id: req.params.id },

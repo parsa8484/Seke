@@ -2,7 +2,7 @@ import { prisma } from "../db";
 import { config } from "../config";
 import { getMarketSnapshot } from "./tgjuClient";
 import { MarketUnit, toStoredPrice, unitForSymbol } from "./tgjuCatalog";
-import { evaluatePriceAlerts } from "./alertService";
+import { evaluatePriceAlerts, PriceChange } from "./alertService";
 
 /**
  * قیمت دارایی‌های فعالِ متصل به tgju را می‌گیرد، در Asset کش می‌کند و یک ردیف
@@ -49,7 +49,10 @@ export async function refreshPrices(): Promise<{
 
   let updated = 0;
   let skipped = 0;
-  const changed: { assetId: string; price: number }[] = [];
+  // فقط قیمت‌هایی که واقعاً عوض شده‌اند به بررسی هشدارها می‌روند؛ قیمتِ
+  // تکراری (بازار بسته، یا اسنپ‌شاتِ کهنه‌ی منبعِ یدکی) نمی‌تواند از هدفی
+  // عبور کرده باشد.
+  const changed: PriceChange[] = [];
 
   for (const asset of assets) {
     if (!asset.sourceRef) {
@@ -71,12 +74,16 @@ export async function refreshPrices(): Promise<{
         ? toStoredPrice(quote.raw, explicitUnit)
         : quote.price;
 
+    const previousPrice = asset.currentPrice ?? null;
+
     await prisma.asset.update({
       where: { id: asset.id },
       data: { currentPrice: price, priceUpdatedAt: new Date() },
     });
     await prisma.priceHistory.create({ data: { assetId: asset.id, price } });
-    changed.push({ assetId: asset.id, price });
+    if (previousPrice !== price) {
+      changed.push({ assetId: asset.id, price, previousPrice });
+    }
     updated++;
   }
 

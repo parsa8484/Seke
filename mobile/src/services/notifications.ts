@@ -14,6 +14,14 @@ Notifications.setNotificationHandler({
   }),
 });
 
+/**
+ * شناسه‌ی کانال اندروید. سرور هم دقیقاً همین رشته را در پوش می‌فرستد
+ * (backend/src/services/alertService.ts → ANDROID_CHANNEL_ID)؛ اگر یکی نباشند
+ * اندروید نوتیف را در کانال پیش‌فرضِ «متفرقه» نشان می‌دهد و صدا/لرزش/اهمیتی
+ * که اینجا تنظیم شده اعمال نمی‌شود.
+ */
+export const PRICE_ALERT_CHANNEL_ID = "price-alerts";
+
 export interface PushRegistration {
   token: string | null;
   /** پیام فارسیِ قابل‌نمایش وقتی ثبت نشد */
@@ -35,7 +43,7 @@ export async function registerForPushNotifications(): Promise<PushRegistration> 
 
   if (Platform.OS === "android") {
     // بدون کانال، اندروید ۸ به بالا نوتیفیکیشن را بی‌صدا رد می‌کند
-    await Notifications.setNotificationChannelAsync("price-alerts", {
+    await Notifications.setNotificationChannelAsync(PRICE_ALERT_CHANNEL_ID, {
       name: "هشدار قیمت",
       importance: Notifications.AndroidImportance.HIGH,
       vibrationPattern: [0, 250, 250, 250],

@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   View,
   StyleSheet,
@@ -35,6 +35,35 @@ import {
   PriceAlert,
 } from "../../../src/api/types";
 
+/**
+ * پیشنهادِ قیمت هدف: ۲٪ آن‌طرفِ قیمت فعلی، گرد شده به عددی تمیز.
+ *
+ * قبلاً دقیقاً خودِ قیمت فعلی پیش‌فرض می‌شد؛ اگر کاربر دست‌نخورده می‌فرستاد،
+ * هشداری ساخته می‌شد که شرطش از همان لحظه برقرار بود و در اولین رفرشِ سرور
+ * بی‌دلیل شلیک می‌کرد.
+ */
+function suggestTarget(price: number, direction: AlertDirection): string {
+  const raw = direction === "above" ? price * 1.02 : price * 0.98;
+  const step =
+    raw >= 1_000_000
+      ? 10_000
+      : raw >= 100_000
+      ? 1_000
+      : raw >= 10_000
+      ? 100
+      : raw >= 100
+      ? 10
+      : 0;
+  // قیمت‌های خیلی کوچک (واحد صندوق) را گرد نمی‌کنیم؛ گرد کردن ممکن است
+  // عدد را به آن‌طرفِ اشتباهِ قیمت فعلی ببرد
+  if (step === 0) return String(Number(raw.toFixed(2)));
+  const rounded =
+    direction === "above"
+      ? Math.ceil(raw / step) * step
+      : Math.floor(raw / step) * step;
+  return String(rounded);
+}
+
 export default function AlertsScreen() {
   const { colors } = useTheme();
   const styles2 = useMemo(() => makeStyles(colors), [colors]);
@@ -46,6 +75,9 @@ export default function AlertsScreen() {
   const [formError, setFormError] = useState<string | null>(null);
   const [listError, setListError] = useState<string | null>(null);
   const [pushError, setPushError] = useState<string | null>(null);
+  // آخرین عددی که خودمان پیشنهاد داده‌ایم؛ تا وقتی کاربر دستش نزده با عوض
+  // شدن شرط دوباره پیشنهاد می‌دهیم، بعد از آن دیگر کاری به عددش نداریم.
+  const suggestedRef = useRef<string | null>(null);
 
   const { data: alerts, isLoading } = useQuery({
     queryKey: ["alerts"],
@@ -76,6 +108,7 @@ export default function AlertsScreen() {
       }),
     onSuccess: async () => {
       setTarget("");
+      suggestedRef.current = null;
       setAssetKey(null);
       setFormError(null);
       await queryClient.invalidateQueries({ queryKey: ["alerts"] });
@@ -104,18 +137,49 @@ export default function AlertsScreen() {
     onError: (err) => setListError(extractErrorMessage(err)),
   });
 
+  /** تا وقتی عددِ داخل کادر همان چیزی است که خودمان گذاشته‌ایم، جای تغییر دارد */
+  function applySuggestion(price: number | null, dir: AlertDirection) {
+    if (!price) return;
+    if (target && target !== suggestedRef.current) return;
+    const next = suggestTarget(price, dir);
+    suggestedRef.current = next;
+    setTarget(next);
+  }
+
   function handleSelectAsset(asset: HoldingItem) {
     setAssetKey(asset.assetKey);
     setFormError(null);
-    // قیمت فعلی را به‌عنوان نقطه‌ی شروع می‌گذاریم تا کاربر مجبور نباشد یک عدد
-    // ۹ رقمی را از صفر تایپ کند
-    if (!target && asset.price) setTarget(String(Math.round(asset.price)));
+    // عددی نزدیک ولی آن‌طرفِ قیمت فعلی پیشنهاد می‌دهیم تا کاربر مجبور نباشد
+    // عددِ ۹ رقمی را از صفر تایپ کند و هدفش هم از پیش محقق نباشد
+    applySuggestion(asset.price, direction);
+  }
+
+  function handleSelectDirection(next: AlertDirection) {
+    setDirection(next);
+    setFormError(null);
+    applySuggestion(selected?.price ?? null, next);
   }
 
   function handleCreate() {
     if (!assetKey) return setFormError("اول دارایی را انتخاب کنید");
     const value = Number(target);
     if (!value || value <= 0) return setFormError("قیمت هدف را وارد کنید");
+    // همان شرطی که سرور هم رد می‌کند؛ گفتنش اینجا سریع‌تر و روشن‌تر است.
+    // هشدار وقتی می‌زند که قیمت از هدف *عبور* کند، پس هدفی که همین حالا
+    // محقق است هیچ‌وقت شلیک نمی‌کند.
+    const current = selected?.price ?? null;
+    if (current !== null) {
+      if (direction === "above" && value <= current) {
+        return setFormError(
+          `قیمت هدف باید بیشتر از قیمت فعلی (${formatToman(current)} تومان) باشد`
+        );
+      }
+      if (direction === "below" && value >= current) {
+        return setFormError(
+          `قیمت هدف باید کمتر از قیمت فعلی (${formatToman(current)} تومان) باشد`
+        );
+      }
+    }
     setFormError(null);
     createMutation.mutate();
   }
@@ -150,6 +214,8 @@ export default function AlertsScreen() {
       <AppText style={styles.title}>هشدارهای قیمت</AppText>
       <AppText style={[styles.subtitle, { color: colors.textSecondary }]}>
         وقتی قیمت به عددی که می‌خواهید رسید، روی همین گوشی نوتیفیکیشن می‌گیرید.
+        هشدار لحظه‌ی عبورِ قیمت از هدف می‌زند، پس هدف باید آن‌طرفِ قیمت فعلی
+        باشد.
       </AppText>
 
       {pushError ? (
@@ -226,7 +292,7 @@ export default function AlertsScreen() {
             return (
               <Pressable
                 key={opt.value}
-                onPress={() => setDirection(opt.value)}
+                onPress={() => handleSelectDirection(opt.value)}
                 style={[
                   styles.directionOption,
                   {
