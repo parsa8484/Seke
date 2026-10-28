@@ -1,5 +1,5 @@
 {
-  "updated_at": "2026-10-28T08:12:44.217348+03:30",
+  "updated_at": "2026-10-28T15:51:30.079046+03:30",
   "coins": {
     "emami": 266990.0,
     "nim": 140820.0,
@@ -29,6 +29,6 @@
   },
   "status": {
     "coins": "ok",
-    "funds": "error: خطای اتصال: 404 Client Error: Not Found for url: https://brsapi.ir/Api/Tsetmc/AllSymbols.php?key=***&type=1"
+    "funds": "error: خطای اتصال: HTTPSConnectionPool(host='brsapi.ir', port=443): Read timed out. (read timeout=20)"
   }
 }
